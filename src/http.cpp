@@ -227,9 +227,14 @@ namespace http {
         }
     };
 
+    /*
+        reponse status
+    */
     enum class status {
         OK = 200,
         NOT_FOUND = 404,
+        BAD_REQUEST = 400,
+        INTERNAL_SERVER_ERROR = 500,
         UNDEFINED = 1000
     };
 
@@ -238,6 +243,10 @@ namespace http {
             return status::OK;
         else if(code == "404")
             return status::NOT_FOUND;
+        else if(code == "400")
+            return status::BAD_REQUEST;
+        else if(code == "500")
+            return status::INTERNAL_SERVER_ERROR;
         else
             return status::UNDEFINED;
     }
@@ -248,6 +257,10 @@ namespace http {
                 return "200";
             case status::NOT_FOUND:
                 return "404";
+            case status::BAD_REQUEST:
+                return "400";
+            case status::INTERNAL_SERVER_ERROR:
+                return "500";
             default:
                 return "1000";
         }
