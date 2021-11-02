@@ -56,5 +56,50 @@ TEST(test_http, test_request) {
     
     ASSERT_EQ(_req.serialize(), req_str);
 
-    /* TODO : Comlete this test case */
+    http::request req = http::request::deserialize(req_str);
+
+    EXPECT_EQ(req.get_method(), _req.get_method());
+    EXPECT_EQ(req.get_version(), _req.get_version());
+    EXPECT_EQ(req.get_resource(), _req.get_resource());
+    EXPECT_EQ(req.get_body(), _req.get_body());
+    EXPECT_EQ(req.get_header_map()["Content-Type"].value, _req.get_header_map()["Content-Type"].value);
+    EXPECT_EQ(req.get_header_map()["Content-Type2"].value, _req.get_header_map()["Content-Type2"].value);
+
+}
+
+/* response class test case */
+TEST(test_http, test_response) {
+    http::version _v = http::version::HTTP_2_0;
+    http::status _s = http::status::OK;
+    std::string _st = "successful";
+    std::map<std::string, http::header> _h;
+    _h["Content-Type"] = http::header("Content-Type", "application/json");
+    _h["Content-Type2"] = http::header("Content-Type2", "binary/octet");
+    std::string _b = "This is body\nof the response";
+
+    http::response _res(_v, _s, _st, _h, _b);
+
+    std::string v, s, st,  h, b;
+    v = "HTTP/2.0";
+    s = "200";
+    st = "successful";
+    h = std::string("Content-Type: application/json\r\n") + 
+        "Content-Type2: binary/octet";
+    b = "This is body\nof the response";
+
+    std::string res_str = v + http::SPACE + s + http::SPACE + st + 
+        http::NEW_LINE + h + http::NEW_LINE + http::NEW_LINE + b;
+
+    
+    ASSERT_EQ(_res.serialize(), res_str);
+
+    http::response res = http::response::deserialize(res_str);
+
+    EXPECT_EQ(res.get_version(), _res.get_version());
+    EXPECT_EQ(res.get_status(), _res.get_status());
+    EXPECT_EQ(res.get_status_text(), _res.get_status_text());
+    EXPECT_EQ(res.get_body(), _res.get_body());
+    EXPECT_EQ(res.get_header_map()["Content-Type"].value, _res.get_header_map()["Content-Type"].value);
+    EXPECT_EQ(res.get_header_map()["Content-Type2"].value, _res.get_header_map()["Content-Type2"].value);
+
 }

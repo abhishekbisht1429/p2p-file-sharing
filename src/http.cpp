@@ -135,7 +135,7 @@ namespace http {
 
         static header deserialize(std::string _header) {
             std::string key, value;
-            std::vector<std::string> vec = tokenize(_header, ":"+SPACE);
+            std::vector<std::string> vec = tokenize(_header, ":");
             key  = vec[0];
             value = trim(vec[1]);
 
@@ -180,11 +180,11 @@ namespace http {
             return str;
         }
 
-        static request deserialze(std::string req) {
+        static request deserialize(std::string req) {
             try {
-                int pos = req.find_first_of(NEW_LINE+NEW_LINE);
+                int pos = req.find(NEW_LINE+NEW_LINE);
                 std::string req_head = req.substr(0, pos+1);
-                std::string body = req.substr(pos+2);
+                std::string body = req.substr(pos+4);
 
                 /* deserialize header */
                 std::vector<std::string> lines = tokenize(req_head, NEW_LINE);
@@ -204,6 +204,136 @@ namespace http {
                 std::string msg = e.what();
                 throw parse_exception("Failed to parse request: " + msg);
             }
+        }
+
+        method get_method() {
+            return _method;
+        }
+
+        version get_version() {
+            return _version;
+        }
+
+        std::string get_resource() {
+            return resource;
+        }
+
+        std::map<std::string, header> get_header_map() {
+            return headers;
+        }
+
+        std::string get_body() {
+            return body;
+        }
+    };
+
+    enum class status {
+        OK = 200,
+        NOT_FOUND = 404,
+        UNDEFINED = 1000
+    };
+
+    status to_status(std::string code) {
+        if(code == "200")
+            return status::OK;
+        else if(code == "404")
+            return status::NOT_FOUND;
+        else
+            return status::UNDEFINED;
+    }
+
+    std::string to_string(status code) {
+        switch(code) {
+            case status::OK:
+                return "200";
+            case status::NOT_FOUND:
+                return "404";
+            default:
+                return "1000";
+        }
+    }
+
+    /*
+        response
+    */
+    class response {
+        version _version;
+        status _status;
+        std::string status_txt;
+        std::map<std::string, header> headers;
+        std::string body;
+
+        public:
+        response(version _version, status _status, std::string status_txt, 
+                    const std::map<std::string, header> &headers, std::string body):
+                        _version(_version), _status(_status), status_txt(status_txt), 
+                        headers(headers), body(body) {}
+        
+        std::string serialize() {
+            std::string str;
+            str += to_string(_version);
+            str += SPACE;
+            str += to_string(_status);
+            str += SPACE;
+            str += status_txt;
+            str += NEW_LINE;
+
+            for(auto &p : headers) {
+                str += p.second.serialize();
+                str += NEW_LINE;   
+            }
+
+            str += NEW_LINE;
+            str += body;
+
+            return str;
+        }
+
+        static response deserialize(std::string res) {
+            try {
+                int pos = res.find(NEW_LINE+NEW_LINE);
+                std::string res_head = res.substr(0, pos+1);
+                std::string body = res.substr(pos+4);
+
+                /* deserialize header */
+                std::vector<std::string> lines = tokenize(res_head, NEW_LINE);
+                std::vector<std::string> segs = tokenize(lines[0], SPACE);
+                version _version = to_version(segs[0]);
+                status _status = to_status(segs[1]);
+                std::string status_txt = segs[2];
+
+
+                std::map<std::string, header> headers;
+                for(int i=1; i<lines.size(); ++i) {
+                    header h = header::deserialize(lines[i]);
+                    headers[h.key] = h;
+                }
+
+                return response(_version, _status, status_txt, headers, body);
+            } catch(std::exception e) {
+                std::string msg = e.what();
+                throw parse_exception("Failed to parse request: " + msg);
+            }
+        }
+
+        version get_version() {
+            return _version;
+        }
+
+        status get_status() {
+            return _status;
+        }
+
+        std::string get_status_text() {
+            return status_txt;
+        }
+
+        std::map<std::string, header> get_header_map() {
+            return headers;
+        }
+
+        std::string get_body() {
+            return body;
         }
     };
 };
