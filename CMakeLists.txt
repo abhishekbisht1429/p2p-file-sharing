@@ -13,6 +13,14 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(googletest)
 
+# TODO: find a way to included the downloaded sqlite source
+# FetchContent_Declare(
+#   sqlite3
+#   URL https://www.sqlite.org/2021/sqlite-amalgamation-3360000.zip
+# )
+
+# FetchContent_MakeAvailable(sqlite3)
+
 # ------------ p2p-file-sharing ---------------------
 add_library(sqlite
             src/sqlite/sqlite3.c)
@@ -37,10 +45,27 @@ target_link_libraries(test_sqlite_client
 add_executable(test_http
   test/test_http.cpp)
 
-  target_link_libraries(test_http
-    gtest_main
-  )
+target_link_libraries(test_http
+  gtest_main
+)
 
+# test server socket
+add_executable(server_socket_test
+  test/server_socket_test.cpp
+)
+
+target_link_libraries(server_socket_test
+  gtest_main
+)
+
+# test client socket
+add_executable(socket_test
+  test/socket_test.cpp
+)
+
+target_link_libraries(socket_test
+  gtest_main
+)
 
 include(GoogleTest)
 gtest_discover_tests(test_sqlite_client)
