@@ -1,4 +1,5 @@
 #include<sys/socket.h>
+#include<poll.h>
 #include<netinet/in.h>
 #include<arpa/inet.h>
 #include<unistd.h>
@@ -19,6 +20,11 @@ namespace net_socket {
         }
 
 
+    };
+
+    class socket_time_out_exception : public socket_exception {
+        public:
+        socket_time_out_exception(): socket_exception("Socket timed out") {}
     };
 
         /* IP v4 address */
@@ -45,6 +51,7 @@ namespace net_socket {
     /* socket  */
     class inet_socket {
         /* fd for socket */
+        constexpr static int TIMEOUT = 10000;
         int sock;
         sock_addr remote_addr;
         sock_addr local_addr;
@@ -79,12 +86,23 @@ namespace net_socket {
 
         int read_bytes(void *buf, int count) {
             std::cout<<"socket: reading bytes\n";
-            int actual_count;
-            if((actual_count = read(sock, buf, count)) < 0) {
-                std::cout<<"failed to read\n";
-                throw socket_exception("failed to read");
+            pollfd pfd;
+            pfd.fd = sock;
+            pfd.events = POLLIN;
+            int rc = poll(&pfd, 1, TIMEOUT);
+            std::cout<<"rc "<<rc<<"\n";
+            if(rc > 0) {
+                int actual_count;
+                if((actual_count = recv(sock, buf, count, 0)) < 0) {
+                    std::cout<<"failed to read\n";
+                    throw socket_exception("failed to read");
+                }
+                return actual_count;
+            } else if(rc == 0) {
+                throw socket_time_out_exception();
+            } else {
+                throw socket_exception("error occured during polling");
             }
-            return actual_count;
         }
 
         int write_bytes(void *buf, int count) {
@@ -98,6 +116,7 @@ namespace net_socket {
         }
 
         void close_socket() {
+            std::cout<<"closing socket\n";
             close(sock);
         }
     };

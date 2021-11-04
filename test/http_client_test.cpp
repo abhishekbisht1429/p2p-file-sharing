@@ -16,7 +16,10 @@ TEST(http_client, http_client_test) {
         req.set_body("This is request body\n");
         req.add_header("Content-Length", std::to_string(req.get_body().size()));
         EXPECT_NO_THROW (
-            client.send_request(req);
+            for(int i=0; i<3; ++i) {
+                client.send_request(req);
+                sleep(5);
+            }
         );
     );
 }

@@ -43,6 +43,11 @@ namespace http {
         no_such_header_exception(): http_exception("no such header") {}
     };
 
+    class remote_end_closed_exception : public http_exception {
+        public:
+        remote_end_closed_exception() : http_exception("remote end closed") {}
+    };
+
     /* Http methods */
     enum class method {
         GET,
@@ -484,6 +489,9 @@ namespace http {
                 }
                 msg_header += temp;
             }
+            if(read_count == 0 && msg_header.size() == 0)
+                throw remote_end_closed_exception();
+
             /* parsing request header */
             std::cout<<"parsing\n";
             std::cout<<"message_header: "<<msg_header<<"\n";
@@ -559,6 +567,9 @@ namespace http {
         }
     };
 
+    /*
+        http server
+    */
     class http_server {
         constexpr static int MAX_CONN = 10;
         net_socket::sock_addr server_sockaddr;
@@ -570,7 +581,7 @@ namespace http {
             std::string msg_header, msg_body;
             int pos_hend;
             char buf[1024];
-            int read_count = 0;
+            int read_count;
             std::cout<<"reading\n";
 
             /* reading header part */
@@ -592,6 +603,8 @@ namespace http {
                 }
                 msg_header += temp;
             }
+            if(read_count == 0 && msg_header.size() == 0)
+                throw remote_end_closed_exception();
 
             /* parsing request header */
             std::cout<<"parsing\n";
@@ -649,11 +662,20 @@ namespace http {
         static void handle_client(net_socket::inet_socket &sock, Callback &callback, http_server &server) {
             std::cout<<"http_server: handling client\n";
 
+            
             try {
-                http::request req = server.read_request(sock);
-                std::cout<<"client request data: \n";
-                std::cout<<req.serialize()<<"\n";
-                server.write_response(callback(req), sock);
+                while(1) {
+                    http::request req = server.read_request(sock);
+                    std::cout<<"client request data: \n";
+                    std::cout<<req.serialize()<<"\n";
+                    server.write_response(callback(req), sock);
+                }
+            } catch(remote_end_closed_exception rece) {
+                std::cout<<rece.what()<<"\n";
+                sock.close_socket();
+            } catch(net_socket::socket_time_out_exception stoe) {
+                std::cout<<stoe.what()<<"\n";
+                sock.close_socket();
             } catch(content_length_missing_exception clme) {
                 server.write_response(response(status::LENGTH_REQ, "Content-Length missing"), sock);
             } catch(http_exception he) {
@@ -661,7 +683,7 @@ namespace http {
                 throw he;
             }catch(parse_exception pe) {
                 std::cout<<pe.what()<<"\n";
-                throw pe;
+                server.write_response(response(status::BAD_REQUEST, "Malformed HTTP request"), sock);
             } catch(std::exception e) {
                 std::cout<<e.what()<<"\n";
                 throw e;
