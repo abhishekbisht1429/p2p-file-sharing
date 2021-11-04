@@ -2,9 +2,11 @@
 #include<string_view>
 #include<map>
 #include<vector>
+#include<thread>
+#include "socket.cpp"
 
 namespace http {
-    const static std::string NEW_LINE = "\r\n";
+    const static std::string CRLF = "\r\n";
     const static std::string SPACE = " ";
 
     /* parse exception */
@@ -17,6 +19,28 @@ namespace http {
         const char *what() {
             return msg.c_str();
         }
+    };
+
+    class http_exception : std::exception {
+        std::string msg;
+        public:
+        http_exception(std::string msg) {
+            this->msg = msg;
+        }
+
+        const char *what() {
+            return msg.c_str();
+        }
+    };
+
+    class content_length_missing_exception : public http_exception {
+        public:
+        content_length_missing_exception(): http_exception("missing Content-Length") {}
+    };
+
+    class no_such_header_exception : public http_exception {
+        public:
+        no_such_header_exception(): http_exception("no such header") {}
     };
 
     /* Http methods */
@@ -159,6 +183,7 @@ namespace http {
                 std::map<std::string, header> &headers, std::string body):
                     _method(_method), resource(resource), headers(headers), _version(_version),
                     body(body) {}
+        request() {}
         
         std::string serialize() {
             std::string str = "";
@@ -167,13 +192,13 @@ namespace http {
             str += this->resource;
             str += SPACE;
             str += to_string(_version);
-            str += NEW_LINE;
+            str += CRLF;
 
             for(auto &p : headers) {
-                str += p.second.serialize() + NEW_LINE;
+                str += p.second.serialize() + CRLF;
             }
 
-            str += NEW_LINE;
+            str += CRLF;
 
             str += body;
 
@@ -182,12 +207,12 @@ namespace http {
 
         static request deserialize(std::string req) {
             try {
-                int pos = req.find(NEW_LINE+NEW_LINE);
+                int pos = req.find(CRLF+CRLF);
                 std::string req_head = req.substr(0, pos+1);
                 std::string body = req.substr(pos+4);
 
                 /* deserialize header */
-                std::vector<std::string> lines = tokenize(req_head, NEW_LINE);
+                std::vector<std::string> lines = tokenize(req_head, CRLF);
                 std::vector<std::string> segs = tokenize(lines[0], SPACE);
                 method m = to_method(segs[0]);
                 std::string resource = segs[1];
@@ -206,6 +231,31 @@ namespace http {
             }
         }
 
+        void set_method(method m) {
+            this->_method = m;
+        }
+
+        void set_resource(std::string res) {
+            this->resource = res;
+        }
+        
+        void set_version(version v) {
+            this->_version = v;
+        }
+
+        void add_header(std::string key, std::string value) {
+            headers[key] = header(key, value);
+        }
+
+        void set_body(std::string body) {
+            this->body = body;
+        }
+
+        void remove_header(std::string key) {
+            if(headers.find(key) != headers.end())
+                headers.erase(key);
+        }
+
         method get_method() {
             return _method;
         }
@@ -222,6 +272,14 @@ namespace http {
             return headers;
         }
 
+        std::string get_header(std::string key) {
+            if(headers.find(key) == headers.end()) {
+                throw no_such_header_exception();
+            }
+
+            return headers[key].value;
+        }
+
         std::string get_body() {
             return body;
         }
@@ -234,6 +292,7 @@ namespace http {
         OK = 200,
         NOT_FOUND = 404,
         BAD_REQUEST = 400,
+        LENGTH_REQ = 411,
         INTERNAL_SERVER_ERROR = 500,
         UNDEFINED = 1000
     };
@@ -281,6 +340,14 @@ namespace http {
                     const std::map<std::string, header> &headers, std::string body):
                         _version(_version), _status(_status), status_txt(status_txt), 
                         headers(headers), body(body) {}
+        response(){}
+
+        response(status _status, std::string status_txt) {
+            this->_version = version::HTTP_2_0;
+            this->_status = _status;
+            this->status_txt = status_txt;
+            add_header("Content-Length", "0");
+        }
         
         std::string serialize() {
             std::string str;
@@ -289,14 +356,14 @@ namespace http {
             str += to_string(_status);
             str += SPACE;
             str += status_txt;
-            str += NEW_LINE;
+            str += CRLF;
 
             for(auto &p : headers) {
                 str += p.second.serialize();
-                str += NEW_LINE;   
+                str += CRLF;   
             }
 
-            str += NEW_LINE;
+            str += CRLF;
             str += body;
 
             return str;
@@ -304,12 +371,12 @@ namespace http {
 
         static response deserialize(std::string res) {
             try {
-                int pos = res.find(NEW_LINE+NEW_LINE);
+                int pos = res.find(CRLF+CRLF);
                 std::string res_head = res.substr(0, pos+1);
                 std::string body = res.substr(pos+4);
 
                 /* deserialize header */
-                std::vector<std::string> lines = tokenize(res_head, NEW_LINE);
+                std::vector<std::string> lines = tokenize(res_head, CRLF);
                 std::vector<std::string> segs = tokenize(lines[0], SPACE);
                 version _version = to_version(segs[0]);
                 status _status = to_status(segs[1]);
@@ -345,9 +412,285 @@ namespace http {
             return headers;
         }
 
+        std::string get_header(std::string key) {
+            if(headers.find(key) == headers.end()) {
+                throw no_such_header_exception();
+            }
+
+            return headers[key].value;
+        }
+
         std::string get_body() {
             return body;
         }
+
+        void set_version(version v) {
+            this->_version = v;
+        }
+
+        void set_status(status s) {
+            this->_status = s;
+        }
+
+        void set_status_text(std::string text) {
+            this->status_txt = text;
+        }
+
+        void add_header(std::string key, std::string value) {
+            headers[key] = header(key, value);
+        }
+
+        void remove_header(std::string key) {
+            if(headers.find(key) != headers.end())
+                headers.erase(key);
+        }
+        
+        void set_body(std::string body) {
+            this->body = body;
+        }
     };
 
+
+    /*
+        http client
+    */
+    class http_client {
+        net_socket::sock_addr server_sockaddr;
+        net_socket::inet_socket sock;
+
+        response read_response() {
+            /* read response from server */
+            std::string msg_header, msg_body;
+            int pos_hend;
+            char buf[1024];
+            int read_count = 0;
+            std::cout<<"reading\n";
+            /* reading header part */
+            while((read_count = sock.read_bytes(buf, 1024)) > 0) {
+                std::cout<<"read count: "<<read_count<<"\n";
+                std::string temp;
+                for(int i=0; i<read_count; ++i)
+                    temp += buf[i];
+                
+                /* find end of header */
+                pos_hend = temp.find(CRLF+CRLF);
+                if(pos_hend != std::string::npos) {
+                    /* end of request header found */
+                    msg_header += temp.substr(0, pos_hend);
+                    msg_header += CRLF+CRLF;
+                    
+                    msg_body += temp.substr(pos_hend+4);
+                    break;
+                }
+                msg_header += temp;
+            }
+            /* parsing request header */
+            std::cout<<"parsing\n";
+            std::cout<<"message_header: "<<msg_header<<"\n";
+            http::response res = http::response::deserialize(msg_header);
+            /* get Content-Length */
+            int len = 0;
+            try {
+                len = std::stol(res.get_header("Content-Length"));
+            } catch(no_such_header_exception nshe) {
+                std::cout<<nshe.what()<<"\n";
+            }
+            len -= msg_body.size();
+            len = std::max(0, len);
+            
+            /* read rest of the body */
+            while(len > 0) {
+                read_count = sock.read_bytes(buf, 1024);
+                for(int i=0; i<read_count; ++i)
+                    msg_body += buf[i];
+                len -= read_count;
+            }
+            res.set_body(msg_body);
+            return res;
+        }
+
+        void write_request(request req) {
+            std::string data = req.serialize();
+            std::cout<<"data:\n"<<data<<"\n";
+            int to_send = data.size();
+            std::cout<<"to_send: "<<to_send<<"\n";
+            while(to_send>0) {
+                std::cout<<"to_send: "<<to_send<<"\n";
+                to_send -= sock.write_bytes((void*)data.c_str(), to_send);
+            }
+            std::cout<<"to_send: "<<to_send<<"\n";
+            std::cout<<"client sent request\n";
+            std::cout<<"waiting for response\n";
+        }
+
+        public:
+        http_client(net_socket::ipv4_addr ip, uint16_t port) {
+            try {
+                server_sockaddr = net_socket::sock_addr(ip, port);
+                sock.connect_server(server_sockaddr);
+            } catch(std::exception e) {
+                std::cout<<e.what()<<"\n";
+                throw http_exception("http_client: failed to create socket");
+            }
+        }
+
+        ~http_client() {
+            sock.close_socket();
+        }
+
+        response send_request(request req) {
+            std::cout<<"client sending request\n";
+            try {
+                write_request(req);
+                auto res = read_response();
+                std::cout<<"response from server:\n";
+                std::cout<<res.serialize()<<"\n";
+                return res;
+            } catch(http_exception he) {
+                std::cout<<he.what()<<"\n";
+                throw he;
+            } catch(parse_exception pe) {
+                std::cout<<pe.what()<<"\n";
+                throw pe;
+            } catch(std::exception e) {
+                std::cout<<e.what()<<"\n";
+                throw e;
+            }
+        }
+    };
+
+    class http_server {
+        constexpr static int MAX_CONN = 10;
+        net_socket::sock_addr server_sockaddr;
+        net_socket::inet_server_socket server_sock;
+
+        request read_request(net_socket::inet_socket &sock) {
+            /* read request from cient */
+            request req;
+            std::string msg_header, msg_body;
+            int pos_hend;
+            char buf[1024];
+            int read_count = 0;
+            std::cout<<"reading\n";
+
+            /* reading header part */
+            while((read_count = sock.read_bytes(buf, 1024)) > 0) {
+                std::cout<<"read count: "<<read_count<<"\n";
+                std::string temp;
+                for(int i=0; i<read_count; ++i)
+                    temp += buf[i];
+                
+                /* find end of header */
+                pos_hend = temp.find(CRLF+CRLF);
+                if(pos_hend != std::string::npos) {
+                    /* end of request header found */
+                    msg_header += temp.substr(0, pos_hend);
+                    msg_header += CRLF+CRLF;
+                    
+                    msg_body += temp.substr(pos_hend+4);
+                    break;
+                }
+                msg_header += temp;
+            }
+
+            /* parsing request header */
+            std::cout<<"parsing\n";
+            req = http::request::deserialize(msg_header);
+            /* check if Content-Length is available */
+            int len = 0;
+            try {
+                len = std::stol(req.get_header("Content-Length"));
+            } catch(no_such_header_exception nshe) {
+                throw content_length_missing_exception();
+            }
+            
+            len -= msg_body.size();
+            
+            /* read rest of the body */
+            while(len > 0) {
+                read_count = sock.read_bytes(buf, 1024);
+                for(int i=0; i<read_count; ++i)
+                    msg_body += buf[i];
+                len -= read_count;
+            }
+            req.set_body(msg_body);
+            return req;
+        }
+
+        void write_response(response res, net_socket::inet_socket &sock) {
+            std::string data = res.serialize();
+            std::cout<<"data:\n"<<data<<"\n";
+            int to_send = data.size();
+            std::cout<<"to_send: "<<to_send<<"\n";
+            while(to_send>0) {
+                std::cout<<"to_send: "<<to_send<<"\n";
+                to_send -= sock.write_bytes((void*)data.c_str(), to_send);
+            }
+        }
+
+        public:
+        http_server(net_socket::ipv4_addr ip, uint16_t port) {
+            try {
+                server_sockaddr = net_socket::sock_addr(ip, port);
+                server_sock.bind_name(ip, port);
+                server_sock.sock_listen(MAX_CONN);
+            } catch (std::exception e) {
+                std::cout<<e.what()<<"\n";
+                throw http_exception("http_server: failed to create socket");
+            }
+        }
+
+        ~http_server() {
+            std::cout<<"closing socket\n";
+            server_sock.close_socket();
+        }
+
+        template<typename Callback>
+        static void handle_client(net_socket::inet_socket &sock, Callback &callback, http_server &server) {
+            std::cout<<"http_server: handling client\n";
+
+            try {
+                http::request req = server.read_request(sock);
+                std::cout<<"client request data: \n";
+                std::cout<<req.serialize()<<"\n";
+                server.write_response(callback(req), sock);
+            } catch(content_length_missing_exception clme) {
+                server.write_response(response(status::LENGTH_REQ, "Content-Length missing"), sock);
+            } catch(http_exception he) {
+                std::cout<<he.what()<<"\n";
+                throw he;
+            }catch(parse_exception pe) {
+                std::cout<<pe.what()<<"\n";
+                throw pe;
+            } catch(std::exception e) {
+                std::cout<<e.what()<<"\n";
+                throw e;
+            }
+
+            /* write response back to client */
+
+            std::cout<<"http_server: client request handled\n";
+        }
+
+        template<typename Callback>
+        void accept_clients(Callback callback) {
+            try {
+                std::vector<std::thread> threads;
+                while(1) {
+                    
+                    net_socket::inet_socket sock = server_sock.accept_connection();
+
+                    /* create a seperate thread to handle the client */
+                    threads.push_back(std::thread(handle_client<Callback>, 
+                                                    std::ref<net_socket::inet_socket>(sock),
+                                                    std::ref<Callback>(callback),
+                                                    std::ref(*this)));
+                }
+            } catch(std::exception e) {
+                std::cout<<e.what()<<"\n";
+                throw e;
+            }
+        }
+
+    };
 };

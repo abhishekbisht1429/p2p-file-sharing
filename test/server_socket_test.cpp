@@ -8,7 +8,7 @@ TEST(socket_test, socket_creation_test) {
         socket.bind_name(net_socket::ipv4_addr("127.0.0.1"), 9000);
     );
 
-    ASSERT_NO_THROW (
+    ASSERT_NO_THROW(
         socket.sock_listen(10);
     );
 

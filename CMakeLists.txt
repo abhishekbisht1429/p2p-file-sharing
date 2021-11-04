@@ -25,10 +25,10 @@ FetchContent_MakeAvailable(googletest)
 add_library(sqlite
             src/sqlite/sqlite3.c)
 
-add_executable(tracker 
-                src/tracker.cpp)
+# add_executable(tracker 
+#                 src/tracker.cpp)
 
-target_link_libraries(tracker sqlite pthread dl)
+# target_link_libraries(tracker sqlite pthread dl)
 # --------------------------------------------------
 
 # gtest part
@@ -64,6 +64,36 @@ add_executable(socket_test
 )
 
 target_link_libraries(socket_test
+  gtest_main
+)
+
+#test tracker
+add_executable(tracker_test
+  test/tracker_test.cpp
+)
+
+target_link_libraries(tracker_test
+  gtest_main
+  sqlite
+  pthread
+  dl
+)
+
+#test http server
+add_executable(http_server_test
+  test/http_server_test.cpp
+)
+
+target_link_libraries(http_server_test
+  gtest_main
+)
+
+#test http client
+add_executable(http_client_test
+  test/http_client_test.cpp
+)
+
+target_link_libraries(http_client_test
   gtest_main
 )
 

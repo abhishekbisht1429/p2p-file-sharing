@@ -10,11 +10,15 @@ namespace net_socket {
     /* socket exception */
     class socket_exception : std::exception {
         std::string msg;
+        int err_code;
         public:
         socket_exception(std::string msg): msg(msg) {}
+        socket_exception(std::string msg, int err_code): msg(msg), err_code(err_code) {}
         const char *what() {
             return msg.c_str();
         }
+
+
     };
 
         /* IP v4 address */
@@ -38,7 +42,7 @@ namespace net_socket {
         sock_addr(ipv4_addr ip, uint16_t port): ip(ip), port(port) {}
     };
 
-    /* socket class */
+    /* socket  */
     class inet_socket {
         /* fd for socket */
         int sock;
@@ -69,17 +73,27 @@ namespace net_socket {
                 throw socket_exception("unable to connect");
         }
 
+        void connect_server(sock_addr addr) {
+            connect_server(addr.ip.get_ip(), addr.port);
+        }
+
         int read_bytes(void *buf, int count) {
+            std::cout<<"socket: reading bytes\n";
             int actual_count;
-            if((actual_count = read(sock, buf, count)) < 0)
+            if((actual_count = read(sock, buf, count)) < 0) {
+                std::cout<<"failed to read\n";
                 throw socket_exception("failed to read");
+            }
             return actual_count;
         }
 
         int write_bytes(void *buf, int count) {
+            std::cout<<"socket: writing bytes\n";
             int actual_count;
-            if((actual_count = write(sock, buf, count)) < 0)
+            if((actual_count = write(sock, buf, count)) < 0) {
+                std::cout<<"failed to write\n";
                 throw socket_exception("failed to write");
+            }
             return actual_count;
         }
 
@@ -87,10 +101,8 @@ namespace net_socket {
             close(sock);
         }
     };
-    
 
-
-    /* network socket */
+    /* server socket */
     class inet_server_socket {
         /* socket descriptor */
         int sock;
@@ -102,10 +114,6 @@ namespace net_socket {
             sock = socket(PF_INET, SOCK_STREAM, 0);
             if(sock<0)
                 throw socket_exception("failed to create socket");
-        }
-
-        ~inet_server_socket() {
-            close(sock);
         }
 
         void bind_name(ipv4_addr addr, uint16_t port) {
@@ -120,6 +128,10 @@ namespace net_socket {
                 throw socket_exception("failed to bind name");
             
             std::cout<<"successfully bound\n";
+        }
+
+        void bind_addr(sock_addr addr) {
+            bind_name(addr.ip, addr.port);
         }
 
         void sock_listen(int n) {
@@ -142,6 +154,10 @@ namespace net_socket {
             inet_socket socket_obj(new_sock, client_ip, client_port, addr.ip, addr.port);
             
             return socket_obj;
+        }
+
+        void close_socket() {
+            close(sock);
         }
     };
 

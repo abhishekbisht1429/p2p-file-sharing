@@ -24,6 +24,14 @@ TEST(socket_test, socket_connection_test) {
 
     std::cout<<"reply from server "<<c<<"\n";
 
+    EXPECT_NO_THROW (
+        std::cout<<sock.read_bytes(&c, 1)<<"\n";
+    );
+
+    EXPECT_NO_THROW (
+        std::cout<<sock.read_bytes(&c, 1)<<"\n";
+    );
+
     ASSERT_NO_THROW (
         sock.close_socket();
     );

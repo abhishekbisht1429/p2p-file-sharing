@@ -51,7 +51,7 @@ TEST(test_http, test_request) {
     b = "This is body\nof the request";
 
     std::string req_str = m + http::SPACE + res + http::SPACE + v +
-        http::NEW_LINE + h + http::NEW_LINE + http::NEW_LINE + b;
+        http::CRLF + h + http::CRLF + http::CRLF + b;
 
     
     ASSERT_EQ(_req.serialize(), req_str);
@@ -75,7 +75,7 @@ TEST(test_http, test_response) {
     std::map<std::string, http::header> _h;
     _h["Content-Type"] = http::header("Content-Type", "application/json");
     _h["Content-Type2"] = http::header("Content-Type2", "binary/octet");
-    std::string _b = "This is body\nof the response";
+    std::string _b = "";
 
     http::response _res(_v, _s, _st, _h, _b);
 
@@ -85,10 +85,10 @@ TEST(test_http, test_response) {
     st = "successful";
     h = std::string("Content-Type: application/json\r\n") + 
         "Content-Type2: binary/octet";
-    b = "This is body\nof the response";
+    b = "";
 
     std::string res_str = v + http::SPACE + s + http::SPACE + st + 
-        http::NEW_LINE + h + http::NEW_LINE + http::NEW_LINE + b;
+        http::CRLF + h + http::CRLF + http::CRLF + b;
 
     
     ASSERT_EQ(_res.serialize(), res_str);
