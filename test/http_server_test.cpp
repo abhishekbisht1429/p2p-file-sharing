@@ -12,7 +12,7 @@ class callback {
 
         std::string body = "this is response from server\n";
         res.add_header("Content-Length", std::to_string(body.size()));
-        res.set_body(body);
+        res.set_body(s2b(body));
 
         std::cout<<"callback: client request handled\n";
 
@@ -29,6 +29,7 @@ TEST(http_server, http_server_test) {
     callback cb;
 
     ASSERT_NO_THROW (
-        server.accept_clients<callback>(cb);
+        // server.accept_clients<callback>(cb);
+        server.accept_clients<callback>(callback());
     );
 }

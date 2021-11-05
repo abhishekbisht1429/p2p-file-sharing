@@ -40,7 +40,7 @@ TEST(test_http, test_request) {
     _h["Content-Type2"] = http::header("Content-Type2", "binary/octet");
     std::string _b = "This is body\nof the request";
 
-    http::request _req(_m, _res, _v, _h, _b);
+    http::request _req(_m, _res, _v, _h, s2b(_b));
 
     std::string m, res, v, h, b;
     m = "GET";
@@ -54,9 +54,9 @@ TEST(test_http, test_request) {
         http::CRLF + h + http::CRLF + http::CRLF + b;
 
     
-    ASSERT_EQ(_req.serialize(), req_str);
+    ASSERT_EQ(_req.serialize(), s2b(req_str));
 
-    http::request req = http::request::deserialize(req_str);
+    http::request req = http::request::deserialize(s2b(req_str));
 
     EXPECT_EQ(req.get_method(), _req.get_method());
     EXPECT_EQ(req.get_version(), _req.get_version());
@@ -77,7 +77,7 @@ TEST(test_http, test_response) {
     _h["Content-Type2"] = http::header("Content-Type2", "binary/octet");
     std::string _b = "";
 
-    http::response _res(_v, _s, _st, _h, _b);
+    http::response _res(_v, _s, _st, _h, s2b(_b));
 
     std::string v, s, st,  h, b;
     v = "HTTP/2.0";
@@ -91,9 +91,9 @@ TEST(test_http, test_response) {
         http::CRLF + h + http::CRLF + http::CRLF + b;
 
     
-    ASSERT_EQ(_res.serialize(), res_str);
+    ASSERT_EQ(_res.serialize(), s2b(res_str));
 
-    http::response res = http::response::deserialize(res_str);
+    http::response res = http::response::deserialize(s2b(res_str));
 
     EXPECT_EQ(res.get_version(), _res.get_version());
     EXPECT_EQ(res.get_status(), _res.get_status());

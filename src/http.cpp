@@ -5,6 +5,22 @@
 #include<thread>
 #include "socket.cpp"
 
+typedef std::basic_string<unsigned char> bstring;
+
+bstring s2b(std::string str) {
+    bstring bs;
+    for(int i=0; i<str.size(); ++i)
+        bs += (unsigned char)str[i];
+    return bs;
+}
+
+std::string b2s(bstring bs) {
+    std::string str;
+    for(int i=0; i<bs.size(); ++i)
+        str += (char)bs[i];
+    return str;
+}
+
 namespace http {
     const static std::string CRLF = "\r\n";
     const static std::string SPACE = " ";
@@ -181,40 +197,40 @@ namespace http {
         version _version;
         std::string resource;
         std::map<std::string, header> headers;
-        std::string body;
+        bstring body;
 
         public:
         request(method _method, std::string resource, version _version,
-                std::map<std::string, header> &headers, std::string body):
+                std::map<std::string, header> &headers, bstring body):
                     _method(_method), resource(resource), headers(headers), _version(_version),
                     body(body) {}
         request() {}
         
-        std::string serialize() {
-            std::string str = "";
-            str += to_string(_method);
-            str += SPACE;
-            str += this->resource;
-            str += SPACE;
-            str += to_string(_version);
-            str += CRLF;
+        bstring serialize() {
+            bstring bstr;
+            bstr += s2b(to_string(_method));
+            bstr += s2b(SPACE);
+            bstr += s2b(this->resource);
+            bstr += s2b(SPACE);
+            bstr += s2b(to_string(_version));
+            bstr += s2b(CRLF);
 
             for(auto &p : headers) {
-                str += p.second.serialize() + CRLF;
+                bstr += s2b(p.second.serialize() + CRLF);
             }
 
-            str += CRLF;
+            bstr += s2b(CRLF);
 
-            str += body;
+            bstr += body;
 
-            return str;
+            return bstr;
         }
 
-        static request deserialize(std::string req) {
+        static request deserialize(bstring req) {
             try {
-                int pos = req.find(CRLF+CRLF);
-                std::string req_head = req.substr(0, pos+1);
-                std::string body = req.substr(pos+4);
+                int pos = req.find(s2b(CRLF+CRLF));
+                std::string req_head = b2s(req.substr(0, pos+1));
+                bstring body = req.substr(pos+4);
 
                 /* deserialize header */
                 std::vector<std::string> lines = tokenize(req_head, CRLF);
@@ -252,7 +268,7 @@ namespace http {
             headers[key] = header(key, value);
         }
 
-        void set_body(std::string body) {
+        void set_body(bstring body) {
             this->body = body;
         }
 
@@ -285,7 +301,7 @@ namespace http {
             return headers[key].value;
         }
 
-        std::string get_body() {
+        bstring get_body() {
             return body;
         }
     };
@@ -342,11 +358,11 @@ namespace http {
         status _status;
         std::string status_txt;
         std::map<std::string, header> headers;
-        std::string body;
+        bstring body;
 
         public:
         response(version _version, status _status, std::string status_txt, 
-                    const std::map<std::string, header> &headers, std::string body):
+                    const std::map<std::string, header> &headers, bstring body):
                         _version(_version), _status(_status), status_txt(status_txt), 
                         headers(headers), body(body) {}
         response(){}
@@ -358,31 +374,31 @@ namespace http {
             add_header("Content-Length", "0");
         }
         
-        std::string serialize() {
-            std::string str;
-            str += to_string(_version);
-            str += SPACE;
-            str += to_string(_status);
-            str += SPACE;
-            str += status_txt;
-            str += CRLF;
+        bstring serialize() {
+            bstring bstr;
+            bstr += s2b(to_string(_version));
+            bstr += s2b(SPACE);
+            bstr += s2b(to_string(_status));
+            bstr += s2b(SPACE);
+            bstr += s2b(status_txt);
+            bstr += s2b(CRLF);
 
             for(auto &p : headers) {
-                str += p.second.serialize();
-                str += CRLF;   
+                bstr += s2b(p.second.serialize());
+                bstr += s2b(CRLF);   
             }
 
-            str += CRLF;
-            str += body;
+            bstr += s2b(CRLF);
+            bstr += body;
 
-            return str;
+            return bstr;
         }
 
-        static response deserialize(std::string res) {
+        static response deserialize(bstring res) {
             try {
-                int pos = res.find(CRLF+CRLF);
-                std::string res_head = res.substr(0, pos+1);
-                std::string body = res.substr(pos+4);
+                int pos = res.find(s2b(CRLF+CRLF));
+                std::string res_head = b2s(res.substr(0, pos+1));
+                bstring body = res.substr(pos+4);
 
                 /* deserialize header */
                 std::vector<std::string> lines = tokenize(res_head, CRLF);
@@ -432,7 +448,7 @@ namespace http {
             return headers[key].value;
         }
 
-        std::string get_body() {
+        bstring get_body() {
             return body;
         }
 
@@ -457,7 +473,7 @@ namespace http {
                 headers.erase(key);
         }
         
-        void set_body(std::string body) {
+        void set_body(bstring body) {
             this->body = body;
         }
     };
@@ -472,7 +488,7 @@ namespace http {
 
         response read_response() {
             /* read response from server */
-            std::string msg_header, msg_body;
+            bstring msg_header, msg_body;
             int pos_hend;
             char buf[1024];
             int read_count = 0;
@@ -480,16 +496,16 @@ namespace http {
             /* reading header part */
             while((read_count = sock.read_bytes(buf, 1024)) > 0) {
                 std::cout<<"read count: "<<read_count<<"\n";
-                std::string temp;
+                bstring temp;
                 for(int i=0; i<read_count; ++i)
                     temp += buf[i];
                 
                 /* find end of header */
-                pos_hend = temp.find(CRLF+CRLF);
+                pos_hend = temp.find(s2b(CRLF+CRLF));
                 if(pos_hend != std::string::npos) {
                     /* end of request header found */
                     msg_header += temp.substr(0, pos_hend);
-                    msg_header += CRLF+CRLF;
+                    msg_header += s2b(CRLF+CRLF);
                     
                     msg_body += temp.substr(pos_hend+4);
                     break;
@@ -501,7 +517,7 @@ namespace http {
 
             /* parsing request header */
             std::cout<<"parsing\n";
-            std::cout<<"message_header: "<<msg_header<<"\n";
+            std::cout<<"message_header: "<<b2s(msg_header)<<"\n";
             http::response res = http::response::deserialize(msg_header);
             /* get Content-Length */
             int len = 0;
@@ -525,8 +541,8 @@ namespace http {
         }
 
         void write_request(request req) {
-            std::string data = req.serialize();
-            std::cout<<"data:\n"<<data<<"\n";
+            bstring data = req.serialize();
+            std::cout<<"data:\n"<<b2s(data)<<"\n";
             int to_send = data.size();
             std::cout<<"to_send: "<<to_send<<"\n";
             while(to_send>0) {
@@ -561,7 +577,7 @@ namespace http {
                 write_request(req);
                 auto res = read_response();
                 std::cout<<"response from server:\n";
-                std::cout<<res.serialize()<<"\n";
+                std::cout<<b2s(res.serialize())<<"\n";
                 return res;
             } catch(http_exception he) {
                 std::cout<<he.what()<<"\n";
@@ -599,7 +615,7 @@ namespace http {
         request read_request(net_socket::inet_socket &sock) {
             /* read request from cient */
             request req;
-            std::string msg_header, msg_body;
+            bstring msg_header, msg_body;
             int pos_hend;
             char buf[1024];
             int read_count;
@@ -608,16 +624,16 @@ namespace http {
             /* reading header part */
             while((read_count = sock.read_bytes(buf, 1024)) > 0) {
                 std::cout<<"read count: "<<read_count<<"\n";
-                std::string temp;
+                bstring temp;
                 for(int i=0; i<read_count; ++i)
                     temp += buf[i];
                 
                 /* find end of header */
-                pos_hend = temp.find(CRLF+CRLF);
+                pos_hend = temp.find(s2b(CRLF+CRLF));
                 if(pos_hend != std::string::npos) {
                     /* end of request header found */
                     msg_header += temp.substr(0, pos_hend);
-                    msg_header += CRLF+CRLF;
+                    msg_header += s2b(CRLF+CRLF);
                     
                     msg_body += temp.substr(pos_hend+4);
                     break;
@@ -652,8 +668,8 @@ namespace http {
         }
 
         void write_response(response res, net_socket::inet_socket &sock) {
-            std::string data = res.serialize();
-            std::cout<<"data:\n"<<data<<"\n";
+            bstring data = res.serialize();
+            std::cout<<"data:\n"<<b2s(data)<<"\n";
             int to_send = data.size();
             std::cout<<"to_send: "<<to_send<<"\n";
             while(to_send>0) {
@@ -674,6 +690,8 @@ namespace http {
             }
         }
 
+        http_server() {}
+
         ~http_server() {
             std::cout<<"closing socket\n";
             server_sock.close_socket();
@@ -687,7 +705,8 @@ namespace http {
                 try {
                         http::request req = server.read_request(sock);
                         std::cout<<"client request data: \n";
-                        std::cout<<req.serialize()<<"\n";
+                        std::cout<<b2s(req.serialize())<<"\n";
+                        std::cout<<"calling callback\n";
                         server.write_response(callback(req), sock);
                 } catch(remote_end_closed_exception rece) {
                     std::cout<<rece.what()<<"\n";

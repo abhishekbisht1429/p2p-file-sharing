@@ -13,7 +13,7 @@ TEST(http_client, http_client_test) {
         req.set_version(http::version::HTTP_2_0);
         req.add_header("Content-Type", "Text");
         req.add_header("header 1", "hi");
-        req.set_body("This is request body\n");
+        req.set_body(s2b("This is request body\n"));
         req.add_header("Content-Length", std::to_string(req.get_body().size()));
 
         for(int i=0; i<3; ++i) {
@@ -38,7 +38,7 @@ TEST(http_client, http_client_async_test) {
         req.set_version(http::version::HTTP_2_0);
         req.add_header("Content-Type", "Text");
         req.add_header("header 1", "hi");
-        req.set_body("This is request body\n");
+        req.set_body(s2b("This is request body\n"));
         req.add_header("Content-Length", std::to_string(req.get_body().size()));
 
         for(int i=0; i<3; ++i) {
