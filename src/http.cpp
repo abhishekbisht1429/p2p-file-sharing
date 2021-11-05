@@ -574,6 +574,18 @@ namespace http {
                 throw e;
             }
         }
+
+        template<typename Callback>
+        static void f(http_client &client, request &req, Callback &callback) {
+            response res = client.send_request(req);
+            callback(res);
+        }
+
+        template<typename Callback>
+        void send_request_async(request req, Callback callback) {
+            std::thread t(f<Callback>, std::ref(*this), std::ref(req), std::ref(callback));
+            t.join();
+        }
     };
 
     /*
