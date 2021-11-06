@@ -682,8 +682,6 @@ namespace http {
         http_server(net_socket::ipv4_addr ip, uint16_t port) {
             try {
                 server_sockaddr = net_socket::sock_addr(ip, port);
-                server_sock.bind_name(ip, port);
-                server_sock.sock_listen(MAX_CONN);
             } catch (std::exception e) {
                 std::cout<<e.what()<<"\n";
                 throw http_exception("http_server: failed to create socket");
@@ -691,11 +689,6 @@ namespace http {
         }
 
         http_server() {}
-
-        ~http_server() {
-            std::cout<<"closing socket\n";
-            server_sock.close_socket();
-        }
 
         template<typename Callback>
         static void handle_client(net_socket::inet_socket &sock, Callback &callback, http_server &server) {
@@ -737,6 +730,8 @@ namespace http {
         template<typename Callback>
         void accept_clients(Callback callback) {
             try {
+                server_sock.bind_name(server_sockaddr.ip, server_sockaddr.port);
+                server_sock.sock_listen(MAX_CONN);
                 std::vector<std::thread> threads;
                 while(1) {
                     
@@ -752,6 +747,10 @@ namespace http {
                 std::cout<<e.what()<<"\n";
                 throw e;
             }
+        }
+
+        void stop() {
+            server_sock.close_socket();
         }
 
     };

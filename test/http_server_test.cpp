@@ -23,13 +23,6 @@ class callback {
 TEST(http_server, http_server_test) {
     ASSERT_NO_THROW (
         http::http_server server(net_socket::ipv4_addr("127.0.0.1"), 9000);
-    );
-    http::http_server server(net_socket::ipv4_addr("127.0.0.1"), 9000);
-
-    callback cb;
-
-    ASSERT_NO_THROW (
-        // server.accept_clients<callback>(cb);
-        server.accept_clients<callback>(callback());
+        server.accept_clients(callback());
     );
 }

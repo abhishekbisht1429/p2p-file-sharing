@@ -97,5 +97,23 @@ target_link_libraries(http_client_test
   gtest_main
 )
 
+#test client uploader
+add_executable(client_uploader_test
+  test/client_uploader_test.cpp
+)
+
+target_link_libraries(client_uploader_test
+  gtest_main
+)
+
+#test client downloader
+add_executable(client_downloader_test
+  test/client_downloader_test.cpp
+)
+
+target_link_libraries(client_downloader_test
+  gtest_main
+)
+
 include(GoogleTest)
 gtest_discover_tests(test_sqlite_client)
