@@ -7,6 +7,9 @@ TEST(client_test, uploader_test) {
         std::fstream fs("../.test/data_file", 
             std::ios_base::binary | std::ios_base::in | std::ios_base::out);
         std::recursive_mutex m;
-        peer::upload_server us(net_socket::ipv4_addr("127.0.0.1"), 9000, &fs, &m);
+        std::cout<<"Port: ";
+        uint16_t port;
+        std::cin>>port;
+        peer::upload_server us(net_socket::ipv4_addr("127.0.0.1"), port, &fs, &m);
     );
 }

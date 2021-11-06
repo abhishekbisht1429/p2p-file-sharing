@@ -692,7 +692,7 @@ namespace http {
 
         template<typename Callback>
         static void handle_client(net_socket::inet_socket &sock, Callback &callback, http_server &server) {
-            std::cout<<"http_server: handling client\n";
+            std::cout<<"http_server: handling client by "<<std::this_thread::get_id()<<"\n";
 
             while(1) {
                 try {
@@ -701,30 +701,30 @@ namespace http {
                         std::cout<<b2s(req.serialize())<<"\n";
                         std::cout<<"calling callback\n";
                         server.write_response(callback(req), sock);
-                } catch(remote_end_closed_exception rece) {
+                } catch(remote_end_closed_exception &rece) {
                     std::cout<<rece.what()<<"\n";
-                    sock.close_socket();
                     break;
-                } catch(net_socket::socket_time_out_exception stoe) {
+                } catch(net_socket::socket_time_out_exception &stoe) {
                     std::cout<<stoe.what()<<"\n";
-                    sock.close_socket();
                     break;
                 } catch(content_length_missing_exception clme) {
                     server.write_response(response(status::LENGTH_REQ, "Content-Length missing"), sock);
-                } catch(http_exception he) {
+                } catch(http_exception &he) {
                     std::cout<<he.what()<<"\n";
-                    throw he;
-                }catch(parse_exception pe) {
+                    break;
+                }catch(parse_exception &pe) {
                     std::cout<<pe.what()<<"\n";
                     server.write_response(response(status::BAD_REQUEST, "Malformed HTTP request"), sock);
-                } catch(std::exception e) {
+                } catch(std::exception &e) {
+                    std::cout<<"http_client: unexpected exception\n";
                     std::cout<<e.what()<<"\n";
-                    throw e;
+                    break;
                 }
             }
-            /* write response back to client */
+            sock.close_socket();
 
             std::cout<<"http_server: client request handled\n";
+            std::cout<<std::this_thread::get_id()<<" exiting\n";
         }
 
         template<typename Callback>
@@ -734,15 +734,22 @@ namespace http {
                 server_sock.sock_listen(MAX_CONN);
                 std::vector<std::thread> threads;
                 while(1) {
-                    
+                    std::cout<<std::this_thread::get_id()<<" waiting for new connection\n";
                     net_socket::inet_socket sock = server_sock.accept_connection();
+                    std::cout<<std::this_thread::get_id()<<" connected\n";
 
                     /* create a seperate thread to handle the client */
                     threads.push_back(std::thread(handle_client<Callback>, 
                                                     std::ref<net_socket::inet_socket>(sock),
                                                     std::ref<Callback>(callback),
                                                     std::ref(*this)));
+                    // t.join();
+                    // threads.push_back(t);
                 }
+                for(int i=0; i<threads.size(); ++i)
+                    if(threads[i].joinable()) 
+                        threads[i].join();
+                std::cout<<std::this_thread::get_id()<<" exiting\n";
             } catch(std::exception e) {
                 std::cout<<e.what()<<"\n";
                 throw e;

@@ -6,10 +6,12 @@
 #include<exception>
 #include<string>
 #include<iostream>
+#include<thread>
+#include<cstring>
 
 namespace net_socket {
     /* socket exception */
-    class socket_exception : std::exception {
+    class socket_exception : public std::exception {
         std::string msg;
         int err_code;
         public:
@@ -86,15 +88,28 @@ namespace net_socket {
 
         int read_bytes(void *buf, int count) {
             std::cout<<"socket: reading bytes\n";
+            std::cout<<std::this_thread::get_id()<<" has socket "<<sock<<"\n";
             pollfd pfd;
             pfd.fd = sock;
             pfd.events = POLLIN;
             int rc = poll(&pfd, 1, TIMEOUT);
             std::cout<<"rc "<<rc<<"\n";
-            if(rc > 0) {
+            std::cout<<"err "<<std::strerror(errno)<<"\n";
+            std::cout<<"POLL ERR "<<(pfd.revents & POLLERR)<<"\n";
+            std::cout<<"POLLRDHUP "<<(pfd.revents & POLLRDHUP)<<"\n";
+            std::cout<<"POLLPRI "<<(pfd.revents & POLLPRI)<<"\n";
+            std::cout<<"POLLHUP "<<(pfd.revents & POLLHUP)<<"\n";
+            std::cout<<"POLLIN "<<(pfd.revents & POLLIN)<<"\n";
+            std::cout<<"POLLNVAL "<<(pfd.revents & POLLNVAL)<<"\n";
+            // std::cout<<"POLLHUP "<<(pfd.revents & POLLHUP)<<"\n";
+            // std::cout<<"POLLHUP "<<(pfd.revents & POLLHUP)<<"\n";
+            // std::cout<<"POLLHUP "<<(pfd.revents & POLLHUP)<<"\n";
+            
+            
+            if(rc > 0 && pfd.revents & POLLIN) {
                 int actual_count;
                 if((actual_count = recv(sock, buf, count, 0)) < 0) {
-                    std::cout<<"failed to read\n";
+                    std::cout<<std::this_thread::get_id()<<" failed to read"<<"\n";
                     throw socket_exception("failed to read");
                 }
                 return actual_count;

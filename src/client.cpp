@@ -269,10 +269,6 @@ namespace peer {
 
         public:
         upload_server(net_socket::ipv4_addr ip, uint16_t port, std::fstream *fs, std::recursive_mutex *m){
-            // std::fstream fs(abs_fname, std::ios_base::binary | std::ios_base::in);
-            // std::recursive_mutex m;
-            // if(fs.fail())
-            //     throw failed_to_open_file_exception();
             tsfs = tsafe_fstream(fs, m);
 
             try {
