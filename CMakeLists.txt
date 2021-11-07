@@ -21,6 +21,13 @@ FetchContent_MakeAvailable(googletest)
 
 # FetchContent_MakeAvailable(sqlite3)
 
+# FetchContent_Declare(
+#   openssl
+#   URL https://github.com/openssl/openssl/archive/refs/tags/openssl-3.0.0.zip
+# )
+
+# FetchContent_MakeAvailable(openssl)
+
 # ------------ p2p-file-sharing ---------------------
 add_library(sqlite
             src/sqlite/sqlite3.c)
@@ -104,6 +111,8 @@ add_executable(client_uploader_test
 
 target_link_libraries(client_uploader_test
   gtest_main
+  ssl
+  crypto
 )
 
 #test client downloader
@@ -113,6 +122,8 @@ add_executable(client_downloader_test
 
 target_link_libraries(client_downloader_test
   gtest_main
+  ssl
+  crypto
 )
 
 #test multipeer
@@ -122,6 +133,30 @@ add_executable(multipeer_test
 
 target_link_libraries(multipeer_test
   gtest_main
+  ssl
+  crypto
+)
+
+#test sha
+add_executable(sha_test
+  test/sha_test.cpp
+)
+
+target_link_libraries(sha_test
+  gtest_main
+  ssl
+  crypto
+)
+
+#test peer
+add_executable(peer_test
+  test/peer_test.cpp
+)
+
+target_link_libraries(peer_test
+  gtest_main
+  ssl
+  crypto
 )
 
 include(GoogleTest)

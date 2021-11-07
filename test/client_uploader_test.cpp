@@ -12,5 +12,6 @@ TEST(client_test, uploader_test) {
         std::cin>>port;
         peer::tsafe_fstream tsfs(&fs, &m);
         peer::upload_server us(net_socket::ipv4_addr("127.0.0.1"), port, tsfs);
+        us.start();
     );
 }

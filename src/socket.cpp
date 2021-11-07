@@ -53,7 +53,7 @@ namespace net_socket {
     /* socket  */
     class inet_socket {
         /* fd for socket */
-        constexpr static int TIMEOUT = 10000;
+        constexpr static int TIMEOUT = 10000000;
         int sock;
         sock_addr remote_addr;
         sock_addr local_addr;

@@ -26,7 +26,7 @@ namespace http {
     const static std::string SPACE = " ";
 
     /* parse exception */
-    class parse_exception : std::exception {
+    class parse_exception : public std::exception {
         std::string msg;
 
         public:
@@ -37,7 +37,7 @@ namespace http {
         }
     };
 
-    class http_exception : std::exception {
+    class http_exception : public std::exception {
         std::string msg;
         public:
         http_exception(std::string msg) {
@@ -561,7 +561,7 @@ namespace http {
             try {
                 server_sockaddr = net_socket::sock_addr(ip, port);
                 sock.connect_server(server_sockaddr);
-            } catch(std::exception e) {
+            } catch(const std::exception &e) {
                 std::cout<<e.what()<<"\n";
                 throw http_exception("http_client: unable to connect to server");
             }
@@ -750,7 +750,10 @@ namespace http {
                     if(threads[i].joinable()) 
                         threads[i].join();
                 std::cout<<std::this_thread::get_id()<<" exiting\n";
-            } catch(std::exception e) {
+            } catch(net_socket::socket_exception se) {
+                std::cout<<se.what()<<"\n";
+                throw se;
+            }catch(std::exception &e) {
                 std::cout<<e.what()<<"\n";
                 throw e;
             }

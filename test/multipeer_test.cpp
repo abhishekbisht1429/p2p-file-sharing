@@ -23,9 +23,10 @@ TEST(multi_peer, test1) {
     // std::mutex m2;
     
     peer::tsafe_fstream tsfs(&fs, &m);
+    std::vector<bstring> shas;
 
-    peer::downloader d1(net_socket::ipv4_addr("127.0.0.1"), 9000, tsfs);
-    peer::downloader d2(net_socket::ipv4_addr("127.0.0.1"), 9001, tsfs);
+    peer::downloader d1(net_socket::ipv4_addr("127.0.0.1"), 9000, tsfs, shas);
+    peer::downloader d2(net_socket::ipv4_addr("127.0.0.1"), 9001, tsfs, shas);
 
     std::vector<int> pieces1 = {0, 2, 4, 6, 8, 10};
     std::vector<int> pieces2 = {1, 3, 5, 7, 9, 11};
