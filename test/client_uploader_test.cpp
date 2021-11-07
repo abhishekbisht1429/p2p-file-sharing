@@ -10,6 +10,7 @@ TEST(client_test, uploader_test) {
         std::cout<<"Port: ";
         uint16_t port;
         std::cin>>port;
-        peer::upload_server us(net_socket::ipv4_addr("127.0.0.1"), port, &fs, &m);
+        peer::tsafe_fstream tsfs(&fs, &m);
+        peer::upload_server us(net_socket::ipv4_addr("127.0.0.1"), port, tsfs);
     );
 }

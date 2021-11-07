@@ -110,16 +110,15 @@ namespace peer {
     /* each thread will get its own downloader */
     class downloader {
         /* id of current piece being downloaded */
-        tsafe_fstream tsfs;
+        tsafe_fstream &tsfs;
         int piece_id;
         http::http_client client;
 
         public:
         /* downloader assumes that abs_fname has already been allocated required space */
-        downloader(net_socket::ipv4_addr addr, uint16_t port, std::fstream *fs_ptr, std::recursive_mutex *m_ptr): 
-                    piece_id(-1) {
+        downloader(net_socket::ipv4_addr addr, uint16_t port, tsafe_fstream& tsfs): 
+                    piece_id(-1), tsfs(tsfs) {
             try {
-                tsfs = tsafe_fstream(fs_ptr, m_ptr);
                 client.connect(addr, port);
             } catch(http::http_exception he) {
                 std::cout<<he.what()<<"\n";
@@ -169,6 +168,7 @@ namespace peer {
             req.add_header("Piece-Id", std::to_string(piece_id));
 
             auto res = client.send_request(req);
+            // client.send_request_async<downloader>(req, callback, *this);
 
             if(!is_valid(piece_id, res.get_body()))
                 throw sha_mismatch_exception();
@@ -181,7 +181,7 @@ namespace peer {
     class upload_server {
         http::http_server server;
         std::string abs_fname;
-        tsafe_fstream tsfs;
+        tsafe_fstream &tsfs;
         char buf[PIECE_LENGTH];
 
         /* Function to read piece id from disk */
@@ -268,8 +268,7 @@ namespace peer {
 
 
         public:
-        upload_server(net_socket::ipv4_addr ip, uint16_t port, std::fstream *fs, std::recursive_mutex *m){
-            tsfs = tsafe_fstream(fs, m);
+        upload_server(net_socket::ipv4_addr ip, uint16_t port, tsafe_fstream& tsfs): tsfs(tsfs) {
 
             try {
                 server = http::http_server(ip, port);
@@ -283,7 +282,8 @@ namespace peer {
 
     class peer {
         std::priority_queue<int, std::vector<int>, std::greater<int>> pieces;
-        std::vector<unsigned char*> buffer;
+        std::vector<net_socket::sock_addr> peer_addrs;
+
 
     };
 };

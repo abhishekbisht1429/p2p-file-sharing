@@ -105,7 +105,7 @@ namespace net_socket {
             // std::cout<<"POLLHUP "<<(pfd.revents & POLLHUP)<<"\n";
             // std::cout<<"POLLHUP "<<(pfd.revents & POLLHUP)<<"\n";
             
-            
+            /* TODO: handle all the revents flags */
             if(rc > 0 && pfd.revents & POLLIN) {
                 int actual_count;
                 if((actual_count = recv(sock, buf, count, 0)) < 0) {

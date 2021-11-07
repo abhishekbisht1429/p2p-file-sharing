@@ -115,5 +115,14 @@ target_link_libraries(client_downloader_test
   gtest_main
 )
 
+#test multipeer
+add_executable(multipeer_test
+  test/multipeer_test.cpp
+)
+
+target_link_libraries(multipeer_test
+  gtest_main
+)
+
 include(GoogleTest)
 gtest_discover_tests(test_sqlite_client)
