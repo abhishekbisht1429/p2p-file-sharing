@@ -3,7 +3,7 @@
 
 class callback {
     public:
-    http::response operator()(http::request req) {
+    http::response operator()(http::request req, net_socket::sock_addr addr) {
         std::cout<<"callback: handling client\n";
         http::response res;
         res.set_version(http::version::HTTP_2_0);

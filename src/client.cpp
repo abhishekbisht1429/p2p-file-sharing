@@ -4,6 +4,8 @@
 #include<mutex>
 #include<queue>
 #include<functional>
+#include<set>
+#include<unordered_map>
 #include<cstring>
 #include<vector>
 #include<openssl/sha.h>
@@ -82,7 +84,9 @@ namespace peer {
             std::lock_guard<std::recursive_mutex> lock(*m);
             fs->seekp(pos);
             std::cout<<"output pos : "<<fs->tellp()<<"\n";
+            std::cout<<"count: "<<count<<"\n";
             fs->write(t, count);
+            flush();//imp
             return *this;
         }
 
@@ -122,11 +126,71 @@ namespace peer {
             return *this;
         }
 
+        tsafe_fstream flush() {
+            std::lock_guard<std::recursive_mutex> lock(*m);
+            fs->flush();
+            return *this;
+        }
+
         bool fail() const {
             std::lock_guard<std::recursive_mutex> lock(*m);
             return fs->fail();
         }
 
+    };
+
+    class bitfield {
+        bstring container;
+        int _size = 0;
+
+        public:
+        class index_out_of_range_exception: public std::exception {
+            std::string msg;
+            const char *what() {
+                return "index out of range";
+            }
+        };
+
+        bitfield(int n) {
+            this->_size = n;
+            container.resize(((n-1)/8) + 1);
+        }
+
+        bitfield(bstring bs): container(bs) {
+            _size = container.size()*8;
+        }
+
+        bitfield() {}
+
+        bool operator[](int i) {
+            if(i>=_size)
+                throw index_out_of_range_exception();
+            int j = i/8;
+            int k = i%8;
+            return container[j] & (1<<k);
+        }
+
+        void set(int i) {
+            if(i>=_size)
+                throw index_out_of_range_exception();
+            
+            int j = i/8;
+            int k = i%8;
+            container[j] |= (1<<k);
+        }
+
+        void reset(int i) {
+            if(i>=_size)
+                throw index_out_of_range_exception();
+            
+            int j = i/8;
+            int k = i%8;
+            container[j] &= (~(1<<k));
+        }
+
+        bstring to_bstring() {
+            return container;
+        }
     };
 
     /* each thread will get its own downloader */
@@ -136,13 +200,16 @@ namespace peer {
         const std::vector<bstring> shs; //check if it is needed here or not
         // int piece_id;
         http::http_client client;
+        net_socket::sock_addr client_addr;
+        std::function<void(long long, bitfield)> update_callback;
 
         public:
         /* downloader assumes that abs_fname has already been allocated required space */
         downloader(net_socket::ipv4_addr addr, uint16_t port, tsafe_fstream& tsfs, 
-                    const std::vector<bstring> &shs): 
-                    tsfs(tsfs), shs(shs) {
+                    const std::vector<bstring> &shs, std::function<void(long long, bitfield)> callback): 
+                    tsfs(tsfs), shs(shs), update_callback(callback) {
             try {
+                client_addr = net_socket::sock_addr(addr, port);
                 client.connect(addr, port);
             } catch(http::http_exception he) {
                 std::cout<<he.what()<<"\n";
@@ -206,21 +273,29 @@ namespace peer {
             if(res.get_status() != http::status::OK)
                 throw invalid_response_exception();
 
+            /* get the bitfield - may throw header not found exception */
+            bitfield bf = bitfield(s2b(res.get_header("Bit-Field")));
 
             if(!is_valid(piece_id, res.get_body()))
                 throw sha_mismatch_exception();
-
+            
+            /* write piece to disk */
             write_piece(piece_id, res.get_body());
+
+            /* update the local data structures */
+            
+            update_callback(client_addr.uid, bf);
         }
     };
 
     /* there will be a single upload server (threading is handled there already) */
     class upload_server {
         http::http_server server;
-        net_socket::sock_addr addr;
+        net_socket::sock_addr server_addr;
         std::string abs_fname;
         tsafe_fstream tsfs;
         char buf[PIECE_LENGTH];
+        std::function<bitfield(long long)> get_bitfield; 
 
         /* Function to read piece id from disk */
         bstring read_piece(int piece_id) {
@@ -260,7 +335,7 @@ namespace peer {
             public:
             callback(upload_server &userver): userver(userver) {}
 
-            http::response operator()(http::request req) {
+            http::response operator()(http::request req, net_socket::sock_addr sock) {
                 std::cout<<"callback called\n";
                 int piece_id;
                 http::response res;
@@ -276,6 +351,7 @@ namespace peer {
                     res.set_status_text("successful");
                     res.set_version(http::version::HTTP_2_0);
                     res.add_header("Content-Length", std::to_string(piece.size()));
+                    res.add_header("Bit-Field", b2s(userver.get_bitfield(sock.uid).to_bstring()));
                     res.set_body(piece);
                 } catch(http::no_such_header_exception nshe) {
                     std::cout<<nshe.what()<<"\n";
@@ -303,18 +379,17 @@ namespace peer {
             }
         };
 
-
-
         public:
-        upload_server(net_socket::ipv4_addr ip, uint16_t port, tsafe_fstream& tsfs): tsfs(tsfs) {
-            addr = net_socket::sock_addr(ip, port);
+        upload_server(net_socket::ipv4_addr ip, uint16_t port, tsafe_fstream& tsfs, 
+            std::function<bitfield(long long)> f): tsfs(tsfs), get_bitfield(f) {
+            server_addr = net_socket::sock_addr(ip, port);
         }
 
         upload_server() {}
 
         void start() {
             try {
-                server = http::http_server(addr.ip, addr.port);
+                server = http::http_server(server_addr.ip, server_addr.port);
                 server.accept_clients<callback>(callback(*this));
             } catch(std::exception e) {
                 std::cout<<"exception caught\n";
@@ -323,46 +398,56 @@ namespace peer {
         }
     };
 
-    template<typename T, typename Container, typename Compare>
-    class tsafe_pq {
-        std::priority_queue<T, Container, Compare> pq;
+    template<typename T, typename Compare>
+    class tsafe_set {
+        // std::priority_queue<T, Container, Compare> pq;
+        std::set<T, Compare> piece_set;
         std::recursive_mutex m;
 
         public:
         int top() {
             std::lock_guard<std::recursive_mutex> lock(m);
-            return pq.top();
+            return *piece_set.begin();
         }
 
         void pop() {
             std::lock_guard<std::recursive_mutex> lock(m);
-            pq.pop();
+            piece_set.erase(piece_set.begin());
         }
 
         void push(T t) {
             std::lock_guard<std::recursive_mutex> lock(m);
-            pq.push(t);
+            piece_set.insert(t);
         }
 
         bool empty() {
             std::lock_guard<std::recursive_mutex> lock(m);
-            return pq.empty();
+            return piece_set.empty();
         }
 
-        int remove_top() {
+        T remove_top() {
             std::lock_guard<std::recursive_mutex> lock(m);
-            int t = top();
+            T t = top();
             pop();
             return t;
         }
 
     };
 
+
+    struct neighbour_data {
+        net_socket::sock_addr addr;
+        bitfield isAvailable;
+    };
+
     class peer {
-        tsafe_pq<int, std::vector<int>, std::greater<int>> pieces;
+        tsafe_set<int, std::greater<int>> pieces;
         std::recursive_mutex m;
         std::vector<bstring> shs;
-        std::vector<net_socket::sock_addr> peer_addrs;
+
+        // std::vector<net_socket::sock_addr> peer_addrs;
+        std::unordered_map<long long, neighbour_data> ndata;
+
         std::vector<std::thread> dwnld_threads;
         std::thread upload_server_thread;
         tracker_client tc;
@@ -380,13 +465,22 @@ namespace peer {
             p.us.start();
         }
 
-        static void downloader_routine(peer &p, int peer_id) {
+        void update_ndata_callback(long long peer_id, bitfield bf) {
+            std::cout<<"updating ndata\n";
+        }
+
+        bitfield get_bitfield(long long peer_id) {
+            return ndata[peer_id].isAvailable;
+        }
+
+        static void downloader_routine(peer &p, long long peer_id) {
             std::cout<<"downloading\n";
             p.print("download thread started : "+std::to_string(peer_id)+"\n");
             
             /* create a downloader */
             try {
-                downloader d(p.peer_addrs[peer_id].ip, p.peer_addrs[peer_id].port, p.tsfs, p.shs);
+                downloader d(p.ndata[peer_id].addr.ip, p.ndata[peer_id].addr.port, p.tsfs, p.shs,
+                    std::bind(&peer::peer::update_ndata_callback, &p, std::placeholders::_1, std::placeholders::_2));
                 p.print("create downloader\n");
                 std::string tid = std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id()));
                 while(!p.pieces.empty()) {
@@ -395,13 +489,13 @@ namespace peer {
                         p.print(tid+" trying to download piece "+std::to_string(piece_id)+"\n");
                         d.download(piece_id);
                         p.print(tid+" downloaded piece " + std::to_string(piece_id) + "\n");
-                        sleep(1);
+                        // sleep(1);
                     } catch(const std::exception &e) {
                         p.print(tid +" exception occured while downloading. "+std::to_string(piece_id)+"\n");
                         std::cerr<<e.what()<<"\n";
                         p.print("retrying\n");
                         p.pieces.push(piece_id);//imp
-                        sleep(1);
+                        // sleep(1);
                     }
                 }
             } catch(std::exception e) {
@@ -416,9 +510,9 @@ namespace peer {
         }
 
         void start_download() {
-            for(int i=0; i<peer_addrs.size(); ++i) {
+            for(auto &p : ndata) {
                 dwnld_threads.push_back(std::thread(downloader_routine, 
-                    std::ref(*this), i));
+                    std::ref(*this), p.second.addr.get_uid()));
             }
         }
 
@@ -431,7 +525,10 @@ namespace peer {
                 std::cout<<"Port: ";
                 int p;
                 std::cin>>p;
-                peer_addrs.push_back(net_socket::sock_addr(net_socket::ipv4_addr("127.0.0.1"), p));
+                neighbour_data nd;
+                nd.addr = net_socket::sock_addr(net_socket::ipv4_addr("127.0.0.1"), p);
+                nd.isAvailable = bitfield(s2b("1234"));
+                ndata[nd.addr.uid] = (nd);
             }
             // peer_addrs.push_back(net_socket::sock_addr(net_socket::ipv4_addr("127.0.0.1"), 9000));
             // peer_addrs.push_back(net_socket::sock_addr(net_socket::ipv4_addr("127.0.0.1"), 9001));
@@ -442,7 +539,7 @@ namespace peer {
             /*TODO: load shs from the torrent file */
 
             /*TODO: update pieces priority queue from the meta file*/
-            for(int i=0; i<100; ++i)
+            for(int i=0; i<20; ++i)
                 pieces.push(i);
         }
 
@@ -459,7 +556,8 @@ namespace peer {
             load_meta();
 
             /* start the upload server */
-            us = upload_server(net_socket::ipv4_addr(ip), (uint16_t)port, tsfs);
+            us = upload_server(net_socket::ipv4_addr(ip), (uint16_t)port, tsfs, 
+                    std::bind(&peer::peer::get_bitfield, this, std::placeholders::_1));
         }
 
         ~peer() {

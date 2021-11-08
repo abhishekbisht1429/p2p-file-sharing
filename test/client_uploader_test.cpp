@@ -2,6 +2,10 @@
 #include "../src/client.cpp"
 #include<fstream>
 
+peer::bitfield get_bitfield(long long peer_id) {
+    return peer::bitfield(s2b("1234"));
+}
+
 TEST(client_test, uploader_test) {
     ASSERT_NO_THROW(
         std::fstream fs("../.test/data_file", 
@@ -11,7 +15,7 @@ TEST(client_test, uploader_test) {
         uint16_t port;
         std::cin>>port;
         peer::tsafe_fstream tsfs(&fs, &m);
-        peer::upload_server us(net_socket::ipv4_addr("127.0.0.1"), port, tsfs);
+        peer::upload_server us(net_socket::ipv4_addr("127.0.0.1"), port, tsfs, get_bitfield);
         us.start();
     );
 }

@@ -126,39 +126,7 @@ namespace http {
             return version::UNDEFINED;
     }
 
-    std::string ltrim(const std::string &s) {
-        size_t start = s.find_first_not_of(" \n\r\t\f\v");
-        return (start == std::string::npos) ? "" : s.substr(start);
-    }
-    
-    std::string rtrim(const std::string &s) {
-        size_t end = s.find_last_not_of(" \n\r\t\f\v");
-        return (end == std::string::npos) ? "" : s.substr(0, end + 1);
-    }
-    
-    std::string trim(const std::string &s) {
-        return rtrim(ltrim(s));
-    }
 
-    std::vector<std::string> tokenize(std::string str, std::string delim) {
-        std::string temp;
-        std::vector<std::string> vec;
-        int i=0;
-        while(i<str.size()) {
-            if(str.substr(i, delim.size()) == delim) {
-                vec.push_back(temp);
-                temp.clear();
-                i += delim.size();
-            } else {
-                temp += str[i];
-                ++i;
-            }
-        }
-        if(temp.size() > 0)
-            vec.push_back(temp);
-
-        return vec;
-    }
 
     /*
         request header
@@ -180,9 +148,9 @@ namespace http {
 
         static header deserialize(std::string _header) {
             std::string key, value;
-            std::vector<std::string> vec = tokenize(_header, ":");
+            std::vector<std::string> vec = util::tokenize(_header, ":");
             key  = vec[0];
-            value = trim(vec[1]);
+            value = util::trim(vec[1]);
 
             return header(key, value);
         }
@@ -233,8 +201,8 @@ namespace http {
                 bstring body = req.substr(pos+4);
 
                 /* deserialize header */
-                std::vector<std::string> lines = tokenize(req_head, CRLF);
-                std::vector<std::string> segs = tokenize(lines[0], SPACE);
+                std::vector<std::string> lines = util::tokenize(req_head, CRLF);
+                std::vector<std::string> segs = util::tokenize(lines[0], SPACE);
                 method m = to_method(segs[0]);
                 std::string resource = segs[1];
                 version v = to_version(segs[2]);
@@ -401,8 +369,8 @@ namespace http {
                 bstring body = res.substr(pos+4);
 
                 /* deserialize header */
-                std::vector<std::string> lines = tokenize(res_head, CRLF);
-                std::vector<std::string> segs = tokenize(lines[0], SPACE);
+                std::vector<std::string> lines = util::tokenize(res_head, CRLF);
+                std::vector<std::string> segs = util::tokenize(lines[0], SPACE);
                 version _version = to_version(segs[0]);
                 status _status = to_status(segs[1]);
                 std::string status_txt = "";
@@ -700,7 +668,7 @@ namespace http {
                         std::cout<<"client request data: \n";
                         std::cout<<b2s(req.serialize())<<"\n";
                         std::cout<<"calling callback\n";
-                        server.write_response(callback(req), sock);
+                        server.write_response(callback(req, sock.get_remoteaddr()), sock);
                 } catch(remote_end_closed_exception &rece) {
                     std::cout<<rece.what()<<"\n";
                     break;

@@ -13,6 +13,8 @@ void callback(std::vector<int> &pieces, peer::downloader &d) {
     }
 }
 
+void update_callback(long long id, peer::bitfield bf) {}
+
 TEST(multi_peer, test1) {
     std::fstream fs("../.test/data_file_dwn",
                 std::ios_base::binary | std::ios_base::in | std::ios_base::out);
@@ -25,8 +27,8 @@ TEST(multi_peer, test1) {
     peer::tsafe_fstream tsfs(&fs, &m);
     std::vector<bstring> shas;
 
-    peer::downloader d1(net_socket::ipv4_addr("127.0.0.1"), 9000, tsfs, shas);
-    peer::downloader d2(net_socket::ipv4_addr("127.0.0.1"), 9001, tsfs, shas);
+    peer::downloader d1(net_socket::ipv4_addr("127.0.0.1"), 9000, tsfs, shas, update_callback);
+    peer::downloader d2(net_socket::ipv4_addr("127.0.0.1"), 9001, tsfs, shas, update_callback);
 
     std::vector<int> pieces1 = {0, 2, 4, 6, 8, 10};
     std::vector<int> pieces2 = {1, 3, 5, 7, 9, 11};

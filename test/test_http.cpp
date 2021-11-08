@@ -6,7 +6,7 @@
 /* tokenize function test case */
 TEST(test_http_util, test_tokenize) {
     std::string str = "this is test";
-    std::vector<std::string> vec = http::tokenize(str, " ");
+    std::vector<std::string> vec = util::tokenize(str, " ");
 
     ASSERT_EQ(vec.size(), 3);
 

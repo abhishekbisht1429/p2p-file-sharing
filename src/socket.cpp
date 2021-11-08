@@ -9,6 +9,42 @@
 #include<thread>
 #include<cstring>
 
+namespace util {
+    std::string ltrim(const std::string &s) {
+        size_t start = s.find_first_not_of(" \n\r\t\f\v");
+        return (start == std::string::npos) ? "" : s.substr(start);
+    }
+    
+    std::string rtrim(const std::string &s) {
+        size_t end = s.find_last_not_of(" \n\r\t\f\v");
+        return (end == std::string::npos) ? "" : s.substr(0, end + 1);
+    }
+    
+    std::string trim(const std::string &s) {
+        return rtrim(ltrim(s));
+    }
+
+    std::vector<std::string> tokenize(std::string str, std::string delim) {
+        std::string temp;
+        std::vector<std::string> vec;
+        int i=0;
+        while(i<str.size()) {
+            if(str.substr(i, delim.size()) == delim) {
+                vec.push_back(temp);
+                temp.clear();
+                i += delim.size();
+            } else {
+                temp += str[i];
+                ++i;
+            }
+        }
+        if(temp.size() > 0)
+            vec.push_back(temp);
+
+        return vec;
+    }
+};
+
 namespace net_socket {
     /* socket exception */
     class socket_exception : public std::exception {
@@ -45,9 +81,24 @@ namespace net_socket {
     struct sock_addr {
         ipv4_addr ip;
         uint16_t port;
+        long long uid;
         public:
-        sock_addr(): ip("0.0.0.0"), port(0){}
-        sock_addr(ipv4_addr ip, uint16_t port): ip(ip), port(port) {}
+        sock_addr(): ip("0.0.0.0"), port(0){
+            uid = 0;
+        }
+        sock_addr(ipv4_addr ip, uint16_t port): ip(ip), port(port) {
+            auto parts = util::tokenize(ip.get_ip(), ".");
+            long long p1 = std::stoll(parts[0]);
+            long long p2 = std::stoll(parts[1]);
+            long long p3 = std::stoll(parts[2]);
+            long long p4 = std::stoll(parts[3]);
+            long long p5 = port;
+            uid = p1 | (p2<<8) | (p3<<16) | (p4<<24) | (p5<<32); 
+        }
+
+        long long get_uid() {
+            return uid;
+        }
     };
 
     /* socket  */
@@ -128,6 +179,14 @@ namespace net_socket {
                 throw socket_exception("failed to write");
             }
             return actual_count;
+        }
+
+        sock_addr get_remoteaddr() {
+            return remote_addr;
+        }
+
+        sock_addr get_localaddr() {
+            return local_addr;
         }
 
         void close_socket() {
