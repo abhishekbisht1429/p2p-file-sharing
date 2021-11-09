@@ -329,13 +329,14 @@ namespace peer {
             return bs;
         }
 
-        class callback {
-            upload_server &userver;
+        // class callback {
+        //     upload_server &userver;
 
-            public:
-            callback(upload_server &userver): userver(userver) {}
+        //     public:
+        //     callback(upload_server &userver): userver(userver) {}
 
-            http::response operator()(http::request req, net_socket::sock_addr sock) {
+        //     http::response operator()(http::request req, net_socket::sock_addr sock) {
+            http::response callback(http::request req, net_socket::sock_addr sock) {
                 std::cout<<"callback called\n";
                 int piece_id;
                 http::response res;
@@ -343,7 +344,8 @@ namespace peer {
                     piece_id = stoi(req.get_header("Piece-Id"));
                     std::cout<<"piece_id"<<piece_id<<"\n";
                     /* read piece from file */
-                    bstring piece = userver.read_piece(piece_id);
+                    // bstring piece = userver.read_piece(piece_id);
+                    bstring piece = read_piece(piece_id);
 
                     std::cout<<"piece read\n"<<"\n";
                     /* construct response */
@@ -351,7 +353,8 @@ namespace peer {
                     res.set_status_text("successful");
                     res.set_version(http::version::HTTP_2_0);
                     res.add_header("Content-Length", std::to_string(piece.size()));
-                    res.add_header("Bit-Field", b2s(userver.get_bitfield(sock.uid).to_bstring()));
+                    // res.add_header("Bit-Field", b2s(userver.get_bitfield(sock.uid).to_bstring()));
+                    res.add_header("Bit-Field", b2s(get_bitfield(sock.uid).to_bstring()));
                     res.set_body(piece);
                 } catch(http::no_such_header_exception nshe) {
                     std::cout<<nshe.what()<<"\n";
@@ -377,7 +380,7 @@ namespace peer {
 
                 return res;
             }
-        };
+        // };
 
         public:
         upload_server(net_socket::ipv4_addr ip, uint16_t port, tsafe_fstream& tsfs, 
@@ -390,7 +393,9 @@ namespace peer {
         void start() {
             try {
                 server = http::http_server(server_addr.ip, server_addr.port);
-                server.accept_clients<callback>(callback(*this));
+                // server.accept_clients<callback>(callback(*this));
+                server.accept_clients(std::bind(&upload_server::callback, this,
+                    std::placeholders::_1, std::placeholders::_2));
             } catch(std::exception e) {
                 std::cout<<"exception caught\n";
                 std::cout<<e.what()<<"\n";
@@ -445,34 +450,52 @@ namespace peer {
         std::recursive_mutex m;
         std::vector<bstring> shs;
 
-        // std::vector<net_socket::sock_addr> peer_addrs;
+        /* holds data like bitfield of the neighbour */
         std::unordered_map<long long, neighbour_data> ndata;
 
+        /* holds all the downloader thread instances */
         std::vector<std::thread> dwnld_threads;
+
+        /* instance of upload server thread */
         std::thread upload_server_thread;
+
+        /* client to handle tracker communication */
         tracker_client tc;
+
+        /* upload server instance */
         upload_server us;
+
+        /* thread safe stream for the file to be downloaded */
         tsafe_fstream tsfs;
+
+        /* fstream of file to be downloaded (do not use it directly) */
         std::fstream *fs_ptr;
+
+        /* mutex pointer to sync access to download file(do not use it directly) */
         std::recursive_mutex *m_ptr;
 
+        /* Thread safe function to print msg */
         void print(std::string s) {
             std::lock_guard<std::recursive_mutex> lock(m);
             std::cout<<s;
         }
 
-        static void upload_server_routine(peer &p) {
-            p.us.start();
-        }
-
+        /* Callback routines for updating neighbour data */
         void update_ndata_callback(long long peer_id, bitfield bf) {
             std::cout<<"updating ndata\n";
         }
 
+        /* function to get bitfield information */
         bitfield get_bitfield(long long peer_id) {
             return ndata[peer_id].isAvailable;
         }
 
+        /* routine to start the server */
+        static void upload_server_routine(peer &p) {
+            p.us.start();
+        }
+
+        /* routine to start the downloader */
         static void downloader_routine(peer &p, long long peer_id) {
             std::cout<<"downloading\n";
             p.print("download thread started : "+std::to_string(peer_id)+"\n");

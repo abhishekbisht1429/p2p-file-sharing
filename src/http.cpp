@@ -2,6 +2,7 @@
 #include<string_view>
 #include<map>
 #include<vector>
+#include<functional>
 #include<thread>
 #include "socket.cpp"
 
@@ -281,6 +282,9 @@ namespace http {
         OK = 200,
         NOT_FOUND = 404,
         BAD_REQUEST = 400,
+        FORBIDDEN = 403,
+        METHOD_NOT_ALLOWED = 405,
+        CONFLICT = 409,
         LENGTH_REQ = 411,
         INTERNAL_SERVER_ERROR = 500,
         UNDEFINED = 1000
@@ -293,6 +297,12 @@ namespace http {
             return status::NOT_FOUND;
         else if(code == "400")
             return status::BAD_REQUEST;
+        else if(code == "403")
+            return status::FORBIDDEN;
+        else if(code == "405")
+            return status::METHOD_NOT_ALLOWED;
+        else if(code == "409")
+            return status::CONFLICT;
         else if(code == "411")
             return status::LENGTH_REQ;
         else if(code == "500")
@@ -305,10 +315,16 @@ namespace http {
         switch(code) {
             case status::OK:
                 return "200";
-            case status::NOT_FOUND:
-                return "404";
             case status::BAD_REQUEST:
                 return "400";
+            case status::FORBIDDEN:
+                return "403";
+            case status::METHOD_NOT_ALLOWED:
+                return "405";
+            case status::CONFLICT:
+                return "409";
+            case status::NOT_FOUND:
+                return "404";
             case status::LENGTH_REQ:
                 return "411";
             case status::INTERNAL_SERVER_ERROR:
@@ -658,8 +674,10 @@ namespace http {
 
         http_server() {}
 
-        template<typename Callback>
-        static void handle_client(net_socket::inet_socket &sock, Callback &callback, http_server &server) {
+        // template<typename Callback>
+        // static void handle_client(net_socket::inet_socket &sock, Callback &callback, http_server &server) {
+        static void handle_client(net_socket::inet_socket &sock, 
+            std::function<response(request, net_socket::sock_addr)> callback, http_server &server) {
             std::cout<<"http_server: handling client by "<<std::this_thread::get_id()<<"\n";
 
             while(1) {
@@ -695,8 +713,9 @@ namespace http {
             std::cout<<std::this_thread::get_id()<<" exiting\n";
         }
 
-        template<typename Callback>
-        void accept_clients(Callback callback) {
+        // template<typename Callback>
+        // void accept_clients(Callback callback) {
+        void accept_clients(std::function<response(request, net_socket::sock_addr)> callback) {
             try {
                 server_sock.bind_name(server_sockaddr.ip, server_sockaddr.port);
                 server_sock.sock_listen(MAX_CONN);
@@ -707,9 +726,11 @@ namespace http {
                     std::cout<<std::this_thread::get_id()<<" connected\n";
 
                     /* create a seperate thread to handle the client */
-                    threads.push_back(std::thread(handle_client<Callback>, 
+                    // threads.push_back(std::thread(handle_client<Callback>,
+                    threads.push_back(std::thread(handle_client, 
                                                     std::ref<net_socket::inet_socket>(sock),
-                                                    std::ref<Callback>(callback),
+                                                    // std::ref<Callback>(callback),
+                                                    std::ref<std::function<response(request, net_socket::sock_addr)>>(callback),
                                                     std::ref(*this)));
                     // t.join();
                     // threads.push_back(t);
