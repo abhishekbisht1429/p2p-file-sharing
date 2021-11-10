@@ -30,6 +30,20 @@ namespace tracker {
         }
     };       
 
+    class fname_conflict_exception : public std::exception {
+        public:
+        const char *what() {
+            return "file name conflict";
+        }
+    };
+
+    class no_such_file_exception : public std::exception {
+        public:
+        const char *what() {
+            return "no such file";
+        }
+    };
+
     struct peer {
         std::string id;
         std::string passwd;
@@ -53,7 +67,7 @@ namespace tracker {
         std::string id;
         std::string owner_id;
         std::set<std::string> members;
-
+        std::map<std::string, file> files;
     };
 
     class tracker {
@@ -77,7 +91,7 @@ namespace tracker {
         /* http server for tracker */
         http::http_server server;
 
-        std::string get_peers(std::string uid, std::string gid) {
+        std::string get_peers(std::string uid, std::string gid, std::string fname) {
             /* for the time being it is assumed that on tracker start
                 the groups info is loaded in main memory.
                 This can be changed later and instead the data maybe loadead here in this function 
@@ -87,11 +101,26 @@ namespace tracker {
                 throw invalid_gid_exception();
             if(groups[gid].members.find(uid) == groups[gid].members.end())
                 throw invalid_gid_exception();
-            group g = groups[gid];
+            if(groups[gid].files.find(fname) == groups[gid].files.end())
+                throw no_such_file_exception();
+            
+            group &g = groups[gid];
+            file &f = g.files[fname];
+            /* add uid to the leacher set */ 
+            f.leechers.insert(uid);
+
+            /* extract list of seeders and leechers */
+            std::vector<std::string> member_ids;
+            for(auto leecher : f.leechers)
+                member_ids.push_back(leecher);
+            for(auto seeder : f.seeders)
+                member_ids.push_back(seeder);
+
             std::string members;
             // std::string members = "[{"+g.owner_id+","+std::to_string(address[g.owner_id].get_uid())+"}";
-            for(auto id : g.members) {
-                members += ",{"+id+":"+std::to_string(address[id].get_uid())+"}";
+            for(auto id : member_ids) {
+                if(id != uid)
+                    members += ",{"+id+":"+std::to_string(address[id].get_uid())+"}";
             }
             members = members.substr(1);
             members = "["+members+"]";
@@ -171,6 +200,19 @@ namespace tracker {
             sqlite_tc.delete_token(token);
             address.erase(tokent_to_userid(token));
             token_map.erase(token);
+        }
+
+        void share_file(std::string uid, std::string gid, std::string fname) {
+            if(groups.find(gid) == groups.end())
+                throw invalid_gid_exception();
+            if(groups[gid].members.find(uid) == groups[gid].members.end())
+                throw invalid_gid_exception();
+            if(groups[gid].files.find(fname) != groups[gid].files.end())
+                throw fname_conflict_exception();
+            file f;
+            f.group_id = gid;
+            f.seeders.insert(uid);
+            groups[gid].files[fname] = f;
         }
 
         http::response post(http::request req, net_socket::sock_addr remote_addr) {
@@ -262,12 +304,22 @@ namespace tracker {
                 } catch(sqlite::sqlite_exception se) {
                     return http::response(http::status::INTERNAL_SERVER_ERROR, "server error");
                 }
-            } else if(req.get_resource() == "/enter_swarm") {
+            } else if(req.get_resource() == "/share_file") {
                 try {
-
-                    return res;
+                    std::string auth_token = req.get_header("Authorization");
+                    if(!verified(auth_token, remote_addr))
+                            return http::response(http::status::UNAUTHORIZED, "invalid token");
+                    std::string uid = tokent_to_userid(auth_token);
+                    std::string gid = req.get_header("Group-Id");
+                    std::string fname = req.get_header("File-Name");
+                    share_file(uid, gid, fname);
+                    return http::response(http::status::OK, "file name entry added");
                 } catch(http::no_such_header_exception nshe) {
-                    return http::response(http::status::BAD_REQUEST, "file name missing");
+                    return http::response(http::status::BAD_REQUEST, "file name or gid missing");
+                } catch(invalid_gid_exception ige) {
+                    return http::response(http::status::BAD_REQUEST, "invalid gid");
+                } catch(fname_conflict_exception fce) {
+                    return http::response(http::status::BAD_REQUEST, "file already shared");
                 }
             } else {
                 return http::response(http::status::NOT_FOUND, "resource not found");
@@ -285,9 +337,10 @@ namespace tracker {
                     
                     std::string uid = tokent_to_userid(auth_token);
                     std::string gid = req.get_header("Group-Id");
+                    std::string fname = req.get_header("File-Name");
                     std::string peers;
                     try {
-                        peers = get_peers(uid, gid);
+                        peers = get_peers(uid, gid, fname);
                     } catch(invalid_gid_exception ige) {
                         std::cout<<ige.what()<<"\n";
                         return http::response(http::status::FORBIDDEN, "user not part of group or no such group");
@@ -299,9 +352,11 @@ namespace tracker {
 
                     return res;
                 } catch(http::no_such_header_exception nshe) {
-                    return http::response(http::status::BAD_REQUEST, "group id missing");
+                    return http::response(http::status::BAD_REQUEST, "group id or file name missing");
                 } catch(invalid_uid_exception iue) {
                     return http::response(http::status::BAD_REQUEST, "invalid group id");
+                } catch(no_such_file_exception nsfe) {
+                    return http::response(http::status::BAD_REQUEST, "invalid file name");
                 }
             } else {
                 return http::response(http::status::NOT_FOUND, "resource not found");
