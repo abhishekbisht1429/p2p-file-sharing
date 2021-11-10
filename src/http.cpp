@@ -173,6 +173,8 @@ namespace http {
                 std::map<std::string, header> &headers, bstring body):
                     _method(_method), resource(resource), headers(headers), _version(_version),
                     body(body) {}
+        request(method _method, std::string resource): _method(_method), resource(resource),
+            _version(version::HTTP_2_0) {}
         request() {}
         
         bstring serialize() {
@@ -282,6 +284,7 @@ namespace http {
         OK = 200,
         NOT_FOUND = 404,
         BAD_REQUEST = 400,
+        UNAUTHORIZED = 401,
         FORBIDDEN = 403,
         METHOD_NOT_ALLOWED = 405,
         CONFLICT = 409,
@@ -297,6 +300,8 @@ namespace http {
             return status::NOT_FOUND;
         else if(code == "400")
             return status::BAD_REQUEST;
+        else if(code == "401")
+            return status::UNAUTHORIZED;
         else if(code == "403")
             return status::FORBIDDEN;
         else if(code == "405")
@@ -317,6 +322,8 @@ namespace http {
                 return "200";
             case status::BAD_REQUEST:
                 return "400";
+            case status::UNAUTHORIZED:
+                return "401";
             case status::FORBIDDEN:
                 return "403";
             case status::METHOD_NOT_ALLOWED:
@@ -387,17 +394,17 @@ namespace http {
                 /* deserialize header */
                 std::vector<std::string> lines = util::tokenize(res_head, CRLF);
                 std::vector<std::string> segs = util::tokenize(lines[0], SPACE);
-                version _version = to_version(segs[0]);
-                status _status = to_status(segs[1]);
+                version _version = to_version(segs.at(0));
+                status _status = to_status(segs.at(1));
                 std::string status_txt = "";
                 for(int i=2; i<segs.size(); ++i)
-                    status_txt += " " + segs[i];
+                    status_txt += " " + segs.at(i);
                 status_txt = status_txt.substr(1);
 
 
                 std::map<std::string, header> headers;
                 for(int i=1; i<lines.size(); ++i) {
-                    header h = header::deserialize(lines[i]);
+                    header h = header::deserialize(lines.at(i));
                     headers[h.key] = h;
                 }
 
@@ -538,17 +545,23 @@ namespace http {
             std::cout<<"waiting for response\n";
         }
 
+        void reconnect() {
+            sock.connect_server(server_sockaddr);
+        }
+
         public:
         http_client() {}
 
-        void connect(net_socket::ipv4_addr ip, uint16_t port) {
+        void connect(net_socket::sock_addr server_addr) {
+            this->server_sockaddr = server_addr;
             try {
-                server_sockaddr = net_socket::sock_addr(ip, port);
                 sock.connect_server(server_sockaddr);
-            } catch(const std::exception &e) {
-                std::cout<<e.what()<<"\n";
-                throw http_exception("http_client: unable to connect to server");
+            } catch(net_socket::is_connected_exception ice) {
+                /* ignore if already connected */    
             }
+        }
+        void connect(net_socket::ipv4_addr ip, uint16_t port) {
+            connect(net_socket::sock_addr(ip, port));
         }
 
         void disconnect() {
@@ -557,21 +570,30 @@ namespace http {
 
         response send_request(request req) {
             std::cout<<"client sending request\n";
-            try {
-                write_request(req);
-                auto res = read_response();
-                std::cout<<"response from server:\n";
-                std::cout<<b2s(res.serialize())<<"\n";
-                return res;
-            } catch(http_exception he) {
-                std::cout<<he.what()<<"\n";
-                throw he;
-            } catch(parse_exception pe) {
-                std::cout<<pe.what()<<"\n";
-                throw pe;
-            } catch(std::exception e) {
-                std::cout<<e.what()<<"\n";
-                throw e;
+            int retry_count = 0;
+            while(1) {
+                try {
+                    write_request(req);
+                    auto res = read_response();
+                    std::cout<<"response from server:\n";
+                    std::cout<<b2s(res.serialize())<<"\n";
+                    return res;
+                } catch(net_socket::sock_not_connected_exception snce) {
+                    if(retry_count > 5)
+                        throw snce;
+                    reconnect();
+                    ++retry_count;
+                } catch(net_socket::broken_pipe_exception bpe) {
+                    if(retry_count > 5)
+                        throw bpe;
+                    reconnect();
+                    ++retry_count;
+                } catch(net_socket::conn_reset_exception cre) {
+                    if(retry_count > 5)
+                        throw cre;
+                    reconnect();
+                    ++retry_count;                  
+                }
             }
         }
 

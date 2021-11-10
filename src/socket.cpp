@@ -5,6 +5,7 @@
 #include<unistd.h>
 #include<exception>
 #include<string>
+#include<vector>
 #include<iostream>
 #include<thread>
 #include<cstring>
@@ -51,6 +52,7 @@ namespace net_socket {
         std::string msg;
         int err_code;
         public:
+        socket_exception() {}
         socket_exception(std::string msg): msg(msg) {}
         socket_exception(std::string msg, int err_code): msg(msg), err_code(err_code) {}
         const char *what() {
@@ -64,6 +66,48 @@ namespace net_socket {
         public:
         socket_time_out_exception(): socket_exception("Socket timed out") {}
     };
+
+    class invalid_socket_descriptor_exception : public socket_exception {};
+
+    class conn_refused_exception: public socket_exception {};
+
+    class conn_reset_exception: public socket_exception {};
+
+    class invalid_buf_addr_exception : public socket_exception {};
+
+    class interrupt_exception : public socket_exception {};
+
+    class no_connection_mode_execption : public socket_exception {};
+
+    class invalid_args_exception : public socket_exception {};
+
+    class mem_alloc_failed_exception : public socket_exception {};
+
+    class sock_not_connected_exception : public socket_exception {};
+
+    class not_sock_exception : public socket_exception {};
+
+    class invalid_msgsize_exception : public socket_exception {};
+
+    class is_connected_exception : public socket_exception {};
+
+    class no_buf_available_exception : public socket_exception {};
+
+    class flag_not_supported_exception : public socket_exception {};
+
+    class permisison_exception : public socket_exception {};
+
+    class address_in_use_exception : public socket_exception {};
+
+    class address_not_available_exception : public socket_exception {};
+
+    class address_format_unsupported_exception : public socket_exception {};
+
+    class network_unreachable_exception : public socket_exception {};
+
+    class protocol_unsupported_exception : public socket_exception {};
+
+    class broken_pipe_exception : public socket_exception {};
 
         /* IP v4 address */
     class ipv4_addr {
@@ -96,6 +140,25 @@ namespace net_socket {
             uid = p1 | (p2<<8) | (p3<<16) | (p4<<24) | (p5<<32); 
         }
 
+        sock_addr(long long uid) {
+            long long mask = 0x00000000000000ffl;
+            long long p1 = uid & mask;
+            mask <<= 8;
+            long long p2 = (uid & mask)>>8;
+            mask <<=8;
+            long long p3 = (uid & mask)>>16;
+            mask <<=8;
+            long long p4 = (uid & mask)>>24;
+            
+            mask = (0x000000000000ffffl)<<32;
+            long long p5 = (uid & mask)>>32;
+
+            port = (uint16_t)port;
+            ip = std::to_string(p1)+"."+std::to_string(p2)+
+                "."+std::to_string(p3)+"."+std::to_string(p4);
+            this->uid = uid;
+        }
+
         long long get_uid() {
             return uid;
         }
@@ -109,12 +172,54 @@ namespace net_socket {
         sock_addr remote_addr;
         sock_addr local_addr;
 
-        public:
-        inet_socket() {
-            sock = socket(PF_INET, SOCK_STREAM, 0);
-            if(sock<0)
-                throw socket_exception("failed to create socket");
+        void throw_exception(int err) {
+            if(err & EBADF) {
+                throw invalid_socket_descriptor_exception();
+            } else if(err & ECONNREFUSED) {
+                throw conn_refused_exception();
+            } else if(err & EFAULT) {
+                throw invalid_buf_addr_exception();
+            } else if(err & EINTR) {
+                throw interrupt_exception();
+            } else if(err & EINVAL) {
+                throw invalid_args_exception();
+            } else if(err & ENOMEM) {
+                throw mem_alloc_failed_exception();
+            } else if(err & ENOTCONN) {
+                throw sock_not_connected_exception();
+            } else if(err & ENOTSOCK) {
+                throw not_sock_exception();
+            } else if(err & ECONNRESET) {
+                throw conn_reset_exception();
+            } else if(err & EDESTADDRREQ) {
+                throw no_connection_mode_execption();
+            } else if(err & EMSGSIZE) {
+                throw invalid_msgsize_exception();
+            } else if(err & ENOBUFS) {
+                throw no_buf_available_exception();
+            } else if(err & EOPNOTSUPP) {
+                throw flag_not_supported_exception();
+            } else if(err & EISCONN) {
+                throw is_connected_exception();
+            } else if(err & (EACCES | EPERM)) {
+                throw permisison_exception();
+            } else if(err & EADDRINUSE) {
+                throw address_in_use_exception();
+            } else if(err & EADDRNOTAVAIL) {
+                throw address_not_available_exception();
+            } else if(err & EAFNOSUPPORT) {
+                throw address_format_unsupported_exception();
+            } else if(err & ENETUNREACH) {
+                throw network_unreachable_exception();
+            } else if(err & EPROTOTYPE) {
+                throw protocol_unsupported_exception();
+            } else if(err & EPIPE) {
+                throw broken_pipe_exception();
+            }
         }
+
+        public:
+        inet_socket() {}
 
         inet_socket(int sock, ipv4_addr ip, uint16_t port, ipv4_addr local_ip, uint16_t local_port) {
             this->sock = sock;
@@ -123,14 +228,31 @@ namespace net_socket {
         }
 
         void connect_server(std::string ip, uint16_t port) {
+            /* create socket */
+            sock = socket(PF_INET, SOCK_STREAM, 0);
+            if(sock<0)
+                throw socket_exception("failed to create socket");
+            
+            remote_addr = sock_addr(ipv4_addr(ip), port);
+
+            /* obtain local addr */
+            // struct sockaddr_in local_name;
+            // socklen_t local_name_size = sizeof(local_name);
+            // getsockname(sock, (struct sockaddr*)&local_addr, &(local_name_size));
+
+            // ipv4_addr local_ip = ipv4_addr(inet_ntoa(local_name.sin_addr));
+            // uint16_t local_port = ntohs(local_name.sin_port);
+
+            /* create server name C lib obj */
             struct sockaddr_in server_name;
             server_name.sin_family = AF_INET;
             if(inet_aton(ip.c_str(), &(server_name.sin_addr)) < 0)
                 throw socket_exception("failed to connect");
             server_name.sin_port = htons(port);
             
-            if(connect(sock, (struct sockaddr*)&server_name, sizeof(server_name)) < 0)
-                throw socket_exception("unable to connect");
+            if(connect(sock, (struct sockaddr*)&server_name, sizeof(server_name)) < 0) {
+                throw_exception(errno);
+            }
         }
 
         void connect_server(sock_addr addr) {
@@ -160,8 +282,7 @@ namespace net_socket {
             if(rc > 0 && pfd.revents & POLLIN) {
                 int actual_count;
                 if((actual_count = recv(sock, buf, count, 0)) < 0) {
-                    std::cout<<std::this_thread::get_id()<<" failed to read"<<"\n";
-                    throw socket_exception("failed to read");
+                    throw_exception(errno);
                 }
                 return actual_count;
             } else if(rc == 0) {
@@ -174,9 +295,12 @@ namespace net_socket {
         int write_bytes(void *buf, int count) {
             std::cout<<"socket: writing bytes\n";
             int actual_count;
-            if((actual_count = write(sock, buf, count)) < 0) {
-                std::cout<<"failed to write\n";
-                throw socket_exception("failed to write");
+            try {
+            if((actual_count = send(sock, buf, count, MSG_NOSIGNAL)) < 0) {
+                throw_exception(errno);
+            }
+            } catch(std::exception &e) {
+                std::cout<<e.what()<<"\n";
             }
             return actual_count;
         }

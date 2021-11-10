@@ -159,5 +159,16 @@ target_link_libraries(peer_test
   crypto
 )
 
+#test tc
+add_executable(tracker_client_test
+  test/tracker_client_test.cpp
+)
+
+target_link_libraries(tracker_client_test
+  gtest_main
+  ssl
+  crypto
+)
+
 include(GoogleTest)
 gtest_discover_tests(test_sqlite_client)

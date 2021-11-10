@@ -236,8 +236,19 @@ namespace sqlite {
             exec(query, callback, &res);
 
             if(res.size() == 0)
-                throw sqlite_exception("no such token", "");
+                throw sqlite_exception("no such id", "");
             return res[0][1];
+        }
+
+        std::string get_token(std::string uid) {
+            std::string query = "SELECT * FROM 'TOKEN' WHERE "\
+                                "UID = '"+uid+"';";
+            std::vector<std::vector<std::string>> res;
+            exec(query, callback, &res);
+
+            if(res.size() == 0)
+                throw sqlite_exception("no such token", "");
+            return res[0][0];
         }
 
         std::vector<std::vector<std::string>> get_token_list() {

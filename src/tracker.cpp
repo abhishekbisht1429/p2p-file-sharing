@@ -36,9 +36,17 @@ namespace tracker {
     };
 
     struct file {
+        /* socket id of seeders */
         std::set<std::string> seeders;
+
+        /* socket id of leechers */
         std::set<std::string> leechers;
+
+        /* file name */
         std::string fname;
+
+        /* group that the file belongs to */
+        std::string group_id;
     };
 
     struct group {
@@ -49,17 +57,24 @@ namespace tracker {
     };
 
     class tracker {
+        /* sqlite clients */
         sqlite::group_client sqlite_gc;
         sqlite::user_client sqlite_uc;
         sqlite::token_client sqlite_tc;
         
-        // std::map<std::string, std::map<std::string, group>> groups;
+        /* groups */
         std::map<std::string, group> groups;
+
+        /* token map for authorization */
         std::unordered_map<std::string, std::string> token_map;
 
+        /* address of currently connected users */
         std::map<std::string, net_socket::sock_addr> address;
 
+        /* tracker server address */
         net_socket::sock_addr server_addr;
+
+        /* http server for tracker */
         http::http_server server;
 
         std::string get_peers(std::string uid, std::string gid) {
@@ -76,7 +91,7 @@ namespace tracker {
             std::string members;
             // std::string members = "[{"+g.owner_id+","+std::to_string(address[g.owner_id].get_uid())+"}";
             for(auto id : g.members) {
-                members += ",{\""+id+"\":\""+std::to_string(address[id].get_uid())+"\"}";
+                members += ",{"+id+":"+std::to_string(address[id].get_uid())+"}";
             }
             members = members.substr(1);
             members = "["+members+"]";
@@ -140,8 +155,14 @@ namespace tracker {
             if(res.size() == 0 || res[1] != passwd)
                 throw invalid_cred_exception();
             
-            std::string token = generate_token(uid, passwd);
-            sqlite_tc.insert_token(token, uid);
+            /* check if token already exists */
+            std::string token;
+            try {
+                token = sqlite_tc.get_token(uid);
+            } catch(sqlite::sqlite_exception se) {
+                token = generate_token(uid, passwd);
+                sqlite_tc.insert_token(token, uid);
+            }
             token_map[token] = uid;
             return token;
         }
@@ -183,9 +204,7 @@ namespace tracker {
                 } catch(http::no_such_header_exception nshe) {
                     return http::response(http::status::BAD_REQUEST, "user id missing");
                 } catch(invalid_cred_exception ice) {
-                    return http::response(http::status::FORBIDDEN, "invalid cred");
-                } catch(sqlite::constraint_failed_exception) {
-                    return http::response(http::status::CONFLICT, "alread logged in");
+                    return http::response(http::status::UNAUTHORIZED, "invalid cred");
                 } catch(sqlite::sqlite_exception se) {
                     return http::response(http::status::INTERNAL_SERVER_ERROR, "server error");
                 }
@@ -193,7 +212,7 @@ namespace tracker {
                 try {
                     std::string auth_token = req.get_header("Authorization");
                     if(!verified(auth_token, remote_addr))
-                        return http::response(http::status::FORBIDDEN, "invalid token");
+                        return http::response(http::status::UNAUTHORIZED, "invalid token");
                     
                     logout(auth_token);
                     return http::response(http::status::OK, "successful");
@@ -204,7 +223,7 @@ namespace tracker {
                 try {
                     std::string auth_token = req.get_header("Authorization");
                     if(!verified(auth_token, remote_addr))
-                        return http::response(http::status::FORBIDDEN, "invalid token");
+                        return http::response(http::status::UNAUTHORIZED, "invalid token");
                     
                     std::string gid = req.get_header("Group-Id");
                     create_group(gid, tokent_to_userid(auth_token));
@@ -212,13 +231,13 @@ namespace tracker {
                 } catch(sqlite::constraint_failed_exception) {
                     return http::response(http::status::CONFLICT, "group id taken");
                 } catch(http::no_such_header_exception nshe) {
-                    return http::response(http::status::BAD_REQUEST, "token missing");
+                    return http::response(http::status::BAD_REQUEST, "missing group id");
                 }
             } else if(req.get_resource() == "/join_group") {
                 try {
                     std::string auth_token = req.get_header("Authorization");
                     if(!verified(auth_token, remote_addr))
-                            return http::response(http::status::FORBIDDEN, "invalid token");
+                            return http::response(http::status::UNAUTHORIZED, "invalid token");
 
                     std::string gid = req.get_header("Group-Id");
                     join_group(tokent_to_userid(auth_token), gid);
@@ -234,7 +253,7 @@ namespace tracker {
                 try {
                     std::string auth_token = req.get_header("Authorization");
                     if(!verified(auth_token, remote_addr))
-                            return http::response(http::status::FORBIDDEN, "invalid token");
+                            return http::response(http::status::UNAUTHORIZED, "invalid token");
                     std::string gid = req.get_header("Group-Id");
                     leave_group(tokent_to_userid(auth_token), gid);
                     return http::response(http::status::OK, "successful");
@@ -242,6 +261,13 @@ namespace tracker {
                     return http::response(http::status::BAD_REQUEST, "token missing");
                 } catch(sqlite::sqlite_exception se) {
                     return http::response(http::status::INTERNAL_SERVER_ERROR, "server error");
+                }
+            } else if(req.get_resource() == "/enter_swarm") {
+                try {
+
+                    return res;
+                } catch(http::no_such_header_exception nshe) {
+                    return http::response(http::status::BAD_REQUEST, "file name missing");
                 }
             } else {
                 return http::response(http::status::NOT_FOUND, "resource not found");
@@ -255,7 +281,7 @@ namespace tracker {
                     std::string auth_token = req.get_header("Authorization");
 
                     if(!verified(auth_token, remote_addr))
-                        return http::response(http::status::FORBIDDEN, "invalid token");
+                        return http::response(http::status::UNAUTHORIZED, "invalid token");
                     
                     std::string uid = tokent_to_userid(auth_token);
                     std::string gid = req.get_header("Group-Id");

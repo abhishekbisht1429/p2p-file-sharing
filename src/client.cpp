@@ -13,15 +13,19 @@
 
 namespace peer {
     constexpr static size_t PIECE_LENGTH = 1;
-    class tracker_client {
-
-    };
 
     class invalid_piece_no_exception : public std::exception {
         public:
         const char *what() {
             return "invalid piece id";
         }
+    };
+
+    class invalid_cred_exception : public std::exception {
+        public:
+        const char *what() {
+            return "invalid credentials";
+        }    
     };
 
     class invalid_response_exception : public std::exception {
@@ -200,7 +204,7 @@ namespace peer {
         const std::vector<bstring> shs; //check if it is needed here or not
         // int piece_id;
         http::http_client client;
-        net_socket::sock_addr client_addr;
+        net_socket::sock_addr server_addr;
         std::function<void(long long, bitfield)> update_callback;
 
         public:
@@ -209,7 +213,7 @@ namespace peer {
                     const std::vector<bstring> &shs, std::function<void(long long, bitfield)> callback): 
                     tsfs(tsfs), shs(shs), update_callback(callback) {
             try {
-                client_addr = net_socket::sock_addr(addr, port);
+                server_addr = net_socket::sock_addr(addr, port);
                 client.connect(addr, port);
             } catch(http::http_exception he) {
                 std::cout<<he.what()<<"\n";
@@ -284,7 +288,7 @@ namespace peer {
 
             /* update the local data structures */
             
-            update_callback(client_addr.uid, bf);
+            update_callback(server_addr.uid, bf);
         }
     };
 
@@ -443,6 +447,139 @@ namespace peer {
     struct neighbour_data {
         net_socket::sock_addr addr;
         bitfield isAvailable;
+    };
+
+    class tracker_client {
+        net_socket::sock_addr tracker_addr;
+        std::string auth_token;
+        http::http_client client;
+        
+        public:
+        tracker_client(net_socket::sock_addr tracker_addr): tracker_addr(tracker_addr) {}
+        tracker_client() {}
+
+        void signup(std::string uname, std::string passwd) {
+            client.connect(tracker_addr);
+            http::request req(http::method::POST, "/signup");
+            req.add_header("Content-Length", "0");
+            req.add_header("Username", uname);
+            req.add_header("Password", passwd);
+
+            
+            auto res = client.send_request(req);
+            if(res.get_status() == http::status::UNAUTHORIZED)
+                throw invalid_cred_exception();
+            else if(res.get_status() != http::status::OK)
+                throw http::http_exception("failed to sign up: "+res.get_status_text());         
+            client.disconnect();   
+        }
+
+        void login(std::string uname, std::string passwd) {
+            client.connect(tracker_addr);
+            http::request req(http::method::POST, "/login");
+            req.add_header("Content-Length", "0");
+            req.add_header("Username", uname);
+            req.add_header("Password", passwd);
+
+            
+            auto res = client.send_request(req);
+            if(res.get_status() == http::status::OK)
+                auth_token = res.get_header("Authorization");
+            else if(res.get_status() == http::status::UNAUTHORIZED)
+                throw invalid_cred_exception();
+            else
+                throw http::http_exception("failed to log in: "+res.get_status_text());
+            
+            client.disconnect();
+        }
+
+        void create_group(std::string gid) {
+            client.connect(tracker_addr);
+            http::request req(http::method::POST, "/create_group");
+            req.add_header("Content-Length", "0");
+            req.add_header("Authorization", auth_token);
+            req.add_header("Group-Id", gid);
+
+            auto res = client.send_request(req);
+            if(res.get_status() == http::status::UNAUTHORIZED)
+                throw invalid_cred_exception();
+            else if(res.get_status() != http::status::OK)
+                throw http::http_exception("failed to create group: "+res.get_status_text());
+            client.disconnect();
+        }
+
+        void join_group(std::string gid) {
+            client.connect(tracker_addr);
+            http::request req(http::method::POST, "/join_group");
+            req.add_header("Content-Length", "0");
+            req.add_header("Authorization", auth_token);
+
+            auto res = client.send_request(req);
+            if(res.get_status() == http::status::UNAUTHORIZED)
+                throw invalid_cred_exception();
+            else if(res.get_status() != http::status::OK)
+                throw http::http_exception("failed to create group: "+res.get_status_text());
+            client.disconnect();
+        }
+
+        void leave_group(std::string gid) {
+            client.connect(tracker_addr);
+            http::request req(http::method::POST, "/leave_group");
+            req.add_header("Content-Length", "0");
+            req.add_header("Authorization", auth_token);
+
+            auto res = client.send_request(req);
+            if(res.get_status() == http::status::UNAUTHORIZED)
+                throw invalid_cred_exception();
+            else if(res.get_status() != http::status::OK)
+                throw http::http_exception("failed to create group: "+res.get_status_text());
+            client.disconnect();
+        }
+
+        void logout() {
+            client.connect(tracker_addr);
+            http::request req(http::method::POST, "/logout");
+            req.add_header("Content-Length", "0");
+            req.add_header("Authorization", auth_token);
+
+            
+            auto res = client.send_request(req);
+            if(res.get_status() == http::status::UNAUTHORIZED)
+                throw invalid_cred_exception();
+            else if(res.get_status() != http::status::OK)
+                throw http::http_exception("failed to sign up: "+res.get_status_text());
+            client.disconnect();
+        }
+
+        std::vector<net_socket::sock_addr> get_peers(std::string fname, std::string gid) {
+            client.connect(tracker_addr);
+            http::request req(http::method::GET, "/peers");
+            req.add_header("Content-Length", "0");
+            req.add_header("Authorization", auth_token);
+            req.add_header("Group-Id", gid);
+
+            std::vector<net_socket::sock_addr> addrs;
+            auto res = client.send_request(req);
+            if(res.get_status() == http::status::OK) {
+                /* parse the body here */
+                std::string body = b2s(res.get_body());
+                body = body.substr(1, body.size()-2);
+                auto segs = util::tokenize(body, ",");
+                for(auto seg : segs) {
+                    seg = seg.substr(1, seg.size()-2);
+                    auto p = util::tokenize(seg, ":");
+                    addrs.push_back(net_socket::sock_addr(stoll(p[1])));
+                }
+
+                return addrs;
+            } else if(res.get_status() == http::status::UNAUTHORIZED) {
+                throw invalid_cred_exception();
+            } else {
+                throw http::http_exception("failed to fetch peers: "+res.get_status_text());
+            }
+            client.disconnect();
+            return addrs;
+        }
     };
 
     class peer {
@@ -604,4 +741,5 @@ namespace peer {
             }
         }
     };
+
 };
