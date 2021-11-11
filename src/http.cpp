@@ -533,7 +533,7 @@ namespace http {
 
         void write_request(request req) {
             bstring data = req.serialize();
-            std::cout<<"data:\n"<<b2s(data)<<"\n";
+            // std::cout<<"data:\n"<<b2s(data)<<"\n";
             int to_send = data.size();
             std::cout<<"to_send: "<<to_send<<"\n";
             while(to_send>0) {
@@ -576,7 +576,8 @@ namespace http {
                     write_request(req);
                     auto res = read_response();
                     std::cout<<"response from server:\n";
-                    std::cout<<b2s(res.serialize())<<"\n";
+                    std::cout<<http::to_string(res.get_status())<<": "<<res.get_status_text()<<"\n";
+                    // std::cout<<b2s(res.serialize())<<"\n";
                     return res;
                 } catch(net_socket::sock_not_connected_exception snce) {
                     if(retry_count > 5)
@@ -675,7 +676,7 @@ namespace http {
 
         void write_response(response res, net_socket::inet_socket &sock) {
             bstring data = res.serialize();
-            std::cout<<"data:\n"<<b2s(data)<<"\n";
+            // std::cout<<"data:\n"<<b2s(data)<<"\n";
             int to_send = data.size();
             std::cout<<"to_send: "<<to_send<<"\n";
             while(to_send>0) {

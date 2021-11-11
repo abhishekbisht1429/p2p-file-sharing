@@ -38,6 +38,15 @@ add_library(sqlite
 # target_link_libraries(tracker sqlite pthread dl)
 # --------------------------------------------------
 
+# torrent generator 
+add_executable(torrent_generator
+  src/torrent_generator.cpp
+)
+
+target_link_libraries(torrent_generator
+  ssl
+  crypto
+)
 # gtest part
 enable_testing()
 

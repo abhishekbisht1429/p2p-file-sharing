@@ -12,7 +12,7 @@
 #include "http.cpp"
 
 namespace peer {
-    constexpr static size_t PIECE_LENGTH = 102400;
+    constexpr static size_t PIECE_LENGTH = 524288;
 
     class invalid_piece_no_exception : public std::exception {
         public:
@@ -242,8 +242,8 @@ namespace peer {
             std::cout<<"\n-------------- writing piece to disk --------------\n";
             std::cout<<"piece id: "<<piece_id<<"\n";
             std::cout<<"piece size: "<<data.size()<<"\n";
-            for(int i=0; i<data.size(); ++i)
-                std::cout<<(int)data[i]<<" ";
+            // for(int i=0; i<data.size(); ++i)
+            //     std::cout<<(int)data[i]<<" ";
             std::cout<<"\n";
 
             long long pos = piece_id * PIECE_LENGTH;
@@ -639,6 +639,8 @@ namespace peer {
 
         std::string fname;
 
+        std::string work_dir;
+
         std::string gid;
 
         /* total number of pieces */
@@ -714,13 +716,12 @@ namespace peer {
             std::cout<<"downloading\n";
             p.print("download thread started : "+std::to_string(peer_id)+"\n");
             p.print(std::to_string(net_socket::sock_addr(peer_id).port));
-            
+            std::string tid = std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id()));
             /* create a downloader */
             try {
                 downloader d(p.ndata[peer_id].addr.ip, p.ndata[peer_id].addr.port, p.tsfs, p.shs,
                     std::bind(&peer::peer::update_ndata_callback, &p, std::placeholders::_1, std::placeholders::_2));
                 p.print("create downloader\n");
-                std::string tid = std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id()));
                 while(!p.pieces.empty()) {
                     int piece_id = p.pieces.remove_top();
                     try {
@@ -729,17 +730,19 @@ namespace peer {
                         p.print(tid+" downloaded piece " + std::to_string(piece_id) + "\n");
                         sleep(1);
                     } catch(const std::exception &e) {
-                        p.print(tid +" exception occured while downloading. "+std::to_string(piece_id)+"\n");
+                        p.print(tid +" Unable to connect to peer. "+std::to_string(piece_id)+"\n");
                         std::cerr<<e.what()<<"\n";
-                        p.print("retrying\n");
+                        // p.print("retrying\n");
                         p.pieces.push(piece_id);//imp
-                        sleep(1);
+                        // sleep(1);
+                        break;
                     }
                 }
             } catch(std::exception e) {
                 p.print(" exiting with failure\n");
                 std::cout<<e.what()<<"\n";
             }
+            p.print("download thread "+tid+" exiting");
         }
 
         void start_upload_server() {
@@ -748,6 +751,7 @@ namespace peer {
         }
 
         void start_download() {
+            /* start download threads */
             for(auto &p : ndata) {
                 dwnld_threads.push_back(std::thread(downloader_routine, 
                     std::ref(*this), p.second.addr.get_uid()));
@@ -764,8 +768,17 @@ namespace peer {
         }
 
         void load_meta() {
-            /*TODO: load shs from the torrent file */
-            n_pieces = 20;
+            /*load shs from the torrent file */
+            std::string torrent_file = "../.test/"+work_dir+"/"+fname+".torrent"; 
+            std::ifstream in(torrent_file);
+            unsigned char md[SHA_DIGEST_LENGTH];
+            while(!in.eof()) {
+                in.read((char*)md, SHA_DIGEST_LENGTH);
+                if(in.gcount() > 0)
+                    shs.push_back(md);
+            }
+            in.close();
+            n_pieces = shs.size();
             pieces_priority.resize(n_pieces);
             
             /*TODO: update pieces priority queue from the meta file*/
@@ -783,8 +796,17 @@ namespace peer {
         peer(std::string work_dir, std::string fname, std::string gid, std::string ip, int port, 
             net_socket::sock_addr tracker_addr, bool seeder = false) {
 
+            
             this->fname = fname;
+            this->work_dir = work_dir;
             this->gid = gid;
+            
+            /* create download file if it does not exists */
+            std::ifstream in("../.test/"+work_dir+"/"+fname);
+            if(!in.is_open())
+                std::ofstream("../.test/"+work_dir+"/"+fname);
+            in.close();
+
             fs_ptr = new std::fstream("../.test/"+work_dir+"/"+fname, std::ios_base::in | std::ios_base::out | std::ios_base::binary);
             m_ptr = new std::recursive_mutex();
             tsfs = tsafe_fstream(fs_ptr, m_ptr);

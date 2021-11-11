@@ -211,6 +211,7 @@ namespace tracker {
                 throw fname_conflict_exception();
             file f;
             f.group_id = gid;
+            f.fname = fname;
             f.seeders.insert(uid);
             groups[gid].files[fname] = f;
         }
