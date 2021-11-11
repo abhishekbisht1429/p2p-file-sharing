@@ -2,7 +2,7 @@
 #include "../src/client.cpp"
 #include<fstream>
 
-peer::bitfield get_bitfield(long long peer_id) {
+peer::bitfield get_bitfield() {
     return peer::bitfield(s2b("1234"));
 }
 

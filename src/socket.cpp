@@ -153,7 +153,7 @@ namespace net_socket {
             mask = (0x000000000000ffffl)<<32;
             long long p5 = (uid & mask)>>32;
 
-            port = (uint16_t)port;
+            port = (uint16_t)p5;
             ip = std::to_string(p1)+"."+std::to_string(p2)+
                 "."+std::to_string(p3)+"."+std::to_string(p4);
             this->uid = uid;
@@ -260,7 +260,7 @@ namespace net_socket {
         }
 
         int read_bytes(void *buf, int count) {
-            std::cout<<"socket: reading bytes\n";
+            std::cout<<std::this_thread::get_id()<<"socket: reading bytes from: "<<sock<<"\n";
             std::cout<<std::this_thread::get_id()<<" has socket "<<sock<<"\n";
             pollfd pfd;
             pfd.fd = sock;
@@ -274,9 +274,6 @@ namespace net_socket {
             std::cout<<"POLLHUP "<<(pfd.revents & POLLHUP)<<"\n";
             std::cout<<"POLLIN "<<(pfd.revents & POLLIN)<<"\n";
             std::cout<<"POLLNVAL "<<(pfd.revents & POLLNVAL)<<"\n";
-            // std::cout<<"POLLHUP "<<(pfd.revents & POLLHUP)<<"\n";
-            // std::cout<<"POLLHUP "<<(pfd.revents & POLLHUP)<<"\n";
-            // std::cout<<"POLLHUP "<<(pfd.revents & POLLHUP)<<"\n";
             
             /* TODO: handle all the revents flags */
             if(rc > 0 && pfd.revents & POLLIN) {
@@ -314,7 +311,7 @@ namespace net_socket {
         }
 
         void close_socket() {
-            std::cout<<"closing socket\n";
+            std::cout<<std::this_thread::get_id()<<"closing socket: "<<sock<<"\n";
             close(sock);
         }
     };
@@ -322,18 +319,18 @@ namespace net_socket {
     /* server socket */
     class inet_server_socket {
         /* socket descriptor */
-        int sock;
+        int server_sock_fd;
         /* local address */
         sock_addr addr;
 
         public:
-        inet_server_socket() {
-            sock = socket(PF_INET, SOCK_STREAM, 0);
-            if(sock<0)
-                throw socket_exception("failed to create socket");
-        }
+        inet_server_socket() {}
 
         void bind_name(ipv4_addr addr, uint16_t port) {
+            server_sock_fd = socket(PF_INET, SOCK_STREAM, 0);
+                if(server_sock_fd<0)
+                    throw socket_exception("failed to create socket");
+            
             this->addr = sock_addr(addr, port);
             struct sockaddr_in name;
             name.sin_family = AF_INET;
@@ -341,7 +338,7 @@ namespace net_socket {
                 throw socket_exception("invalid ip address");
             name.sin_port = htons(port);
             
-            if(bind(sock, (struct sockaddr*)&name, sizeof(name)) < 0)
+            if(bind(server_sock_fd, (struct sockaddr*)&name, sizeof(name)) < 0)
                 throw socket_exception("failed to bind name");
             
             std::cout<<"successfully bound\n";
@@ -352,14 +349,14 @@ namespace net_socket {
         }
 
         void sock_listen(int n) {
-            if(listen(sock, n) < 0)
+            if(listen(server_sock_fd, n) < 0)
                 throw socket_exception("unable to start listening");
         }
 
         inet_socket accept_connection() {
             sockaddr_in client_addr;
             socklen_t size = sizeof(client_addr);
-            int new_sock = accept(sock, (struct sockaddr*)&client_addr, &size); 
+            int new_sock = accept(server_sock_fd, (struct sockaddr*)&client_addr, &size); 
             if(new_sock<0)
                 throw socket_exception("failed to accept connection");
             
@@ -374,7 +371,7 @@ namespace net_socket {
         }
 
         void close_socket() {
-            close(sock);
+            close(server_sock_fd);
         }
     };
 

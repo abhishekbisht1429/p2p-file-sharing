@@ -698,7 +698,7 @@ namespace http {
 
         // template<typename Callback>
         // static void handle_client(net_socket::inet_socket &sock, Callback &callback, http_server &server) {
-        static void handle_client(net_socket::inet_socket &sock, 
+        static void handle_client(net_socket::inet_socket sock, 
             std::function<response(request, net_socket::sock_addr)> callback, http_server &server) {
             std::cout<<"http_server: handling client by "<<std::this_thread::get_id()<<"\n";
 
@@ -735,8 +735,6 @@ namespace http {
             std::cout<<std::this_thread::get_id()<<" exiting\n";
         }
 
-        // template<typename Callback>
-        // void accept_clients(Callback callback) {
         void accept_clients(std::function<response(request, net_socket::sock_addr)> callback) {
             try {
                 server_sock.bind_name(server_sockaddr.ip, server_sockaddr.port);
@@ -748,14 +746,10 @@ namespace http {
                     std::cout<<std::this_thread::get_id()<<" connected\n";
 
                     /* create a seperate thread to handle the client */
-                    // threads.push_back(std::thread(handle_client<Callback>,
                     threads.push_back(std::thread(handle_client, 
                                                     std::ref<net_socket::inet_socket>(sock),
-                                                    // std::ref<Callback>(callback),
                                                     std::ref<std::function<response(request, net_socket::sock_addr)>>(callback),
                                                     std::ref(*this)));
-                    // t.join();
-                    // threads.push_back(t);
                 }
                 for(int i=0; i<threads.size(); ++i)
                     if(threads[i].joinable()) 

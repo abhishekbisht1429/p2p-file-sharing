@@ -137,7 +137,7 @@ namespace tracker {
         bool verified(std::string auth_token, net_socket::sock_addr addr) {
             if(token_map.find(auth_token) == token_map.end())
                 return false;
-            address[tokent_to_userid(auth_token)] = addr;
+            // address[tokent_to_userid(auth_token)] = addr;
             return true;
         }
 
@@ -312,10 +312,13 @@ namespace tracker {
                     std::string uid = tokent_to_userid(auth_token);
                     std::string gid = req.get_header("Group-Id");
                     std::string fname = req.get_header("File-Name");
+                    std::string server_addr = req.get_header("Server-Address");
+
                     share_file(uid, gid, fname);
+                    address[tokent_to_userid(auth_token)] = net_socket::sock_addr(stoll(server_addr));
                     return http::response(http::status::OK, "file name entry added");
                 } catch(http::no_such_header_exception nshe) {
-                    return http::response(http::status::BAD_REQUEST, "file name or gid missing");
+                    return http::response(http::status::BAD_REQUEST, "header missing");
                 } catch(invalid_gid_exception ige) {
                     return http::response(http::status::BAD_REQUEST, "invalid gid");
                 } catch(fname_conflict_exception fce) {
@@ -338,6 +341,8 @@ namespace tracker {
                     std::string uid = tokent_to_userid(auth_token);
                     std::string gid = req.get_header("Group-Id");
                     std::string fname = req.get_header("File-Name");
+                    std::string server_addr = req.get_header("Server-Address");
+                    address[tokent_to_userid(auth_token)] = net_socket::sock_addr(stoll(server_addr));
                     std::string peers;
                     try {
                         peers = get_peers(uid, gid, fname);
@@ -352,7 +357,7 @@ namespace tracker {
 
                     return res;
                 } catch(http::no_such_header_exception nshe) {
-                    return http::response(http::status::BAD_REQUEST, "group id or file name missing");
+                    return http::response(http::status::BAD_REQUEST, "header missing");
                 } catch(invalid_uid_exception iue) {
                     return http::response(http::status::BAD_REQUEST, "invalid group id");
                 } catch(no_such_file_exception nsfe) {

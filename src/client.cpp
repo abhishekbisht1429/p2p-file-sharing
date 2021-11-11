@@ -12,7 +12,7 @@
 #include "http.cpp"
 
 namespace peer {
-    constexpr static size_t PIECE_LENGTH = 1;
+    constexpr static size_t PIECE_LENGTH = 102400;
 
     class invalid_piece_no_exception : public std::exception {
         public:
@@ -195,6 +195,10 @@ namespace peer {
         bstring to_bstring() {
             return container;
         }
+
+        size_t size() {
+            return _size;
+        }
     };
 
     /* each thread will get its own downloader */
@@ -250,9 +254,8 @@ namespace peer {
 
         bool is_valid(int piece_id, bstring &&piece) {
             /* verify sha here */
-            bstring computed_hash;
             unsigned char md[SHA_DIGEST_LENGTH];
-            SHA1(computed_hash.c_str(), piece.size(), md);
+            SHA1(piece.c_str(), piece.size(), md);
 
             // return shs[piece_id] == bstring(md);
             return true; //TODO: change this
@@ -299,7 +302,7 @@ namespace peer {
         std::string abs_fname;
         tsafe_fstream tsfs;
         char buf[PIECE_LENGTH];
-        std::function<bitfield(long long)> get_bitfield; 
+        std::function<bitfield()> get_bitfield; 
 
         /* Function to read piece id from disk */
         bstring read_piece(int piece_id) {
@@ -358,7 +361,7 @@ namespace peer {
                     res.set_version(http::version::HTTP_2_0);
                     res.add_header("Content-Length", std::to_string(piece.size()));
                     // res.add_header("Bit-Field", b2s(userver.get_bitfield(sock.uid).to_bstring()));
-                    res.add_header("Bit-Field", b2s(get_bitfield(sock.uid).to_bstring()));
+                    res.add_header("Bit-Field", b2s(get_bitfield().to_bstring()));
                     res.set_body(piece);
                 } catch(http::no_such_header_exception nshe) {
                     std::cout<<nshe.what()<<"\n";
@@ -388,7 +391,7 @@ namespace peer {
 
         public:
         upload_server(net_socket::ipv4_addr ip, uint16_t port, tsafe_fstream& tsfs, 
-            std::function<bitfield(long long)> f): tsfs(tsfs), get_bitfield(f) {
+            std::function<bitfield()> f): tsfs(tsfs), get_bitfield(f) {
             server_addr = net_socket::sock_addr(ip, port);
         }
 
@@ -405,6 +408,10 @@ namespace peer {
                 std::cout<<e.what()<<"\n";
             }
         }
+
+        net_socket::sock_addr get_addr() {
+            return server_addr;
+        }
     };
 
     template<typename T, typename Compare>
@@ -412,8 +419,20 @@ namespace peer {
         // std::priority_queue<T, Container, Compare> pq;
         std::set<T, Compare> piece_set;
         std::recursive_mutex m;
+        std::vector<int> *pieces_priority;
 
         public:
+        tsafe_set(const Compare &comp, std::vector<int> *pieces_priority) {
+            piece_set = std::set<T, Compare>(comp);
+            this->pieces_priority = pieces_priority;
+        }
+        tsafe_set() {}
+
+        void operator=(const tsafe_set &tss) {
+            this->piece_set = tss.piece_set;
+            // this->m = tss.m;
+            this->pieces_priority = tss.pieces_priority;
+        }
         int top() {
             std::lock_guard<std::recursive_mutex> lock(m);
             return *piece_set.begin();
@@ -439,6 +458,15 @@ namespace peer {
             T t = top();
             pop();
             return t;
+        }
+
+        void update_priority(int piece_id, int priority) {
+            std::lock_guard<std::recursive_mutex> lock(m);
+            if(piece_set.find(piece_id) == piece_set.end())
+                return;
+            piece_set.erase(piece_id);
+            (*pieces_priority)[piece_id] = priority;
+            piece_set.insert(piece_id);
         }
 
     };
@@ -544,6 +572,24 @@ namespace peer {
 
             
             auto res = client.send_request(req);
+            client.disconnect();
+            if(res.get_status() == http::status::UNAUTHORIZED)
+                throw invalid_cred_exception();
+            else if(res.get_status() != http::status::OK)
+                throw http::http_exception("failed to sign up: "+res.get_status_text());
+            
+        }
+
+        void share_file(std::string fname, std::string gid, net_socket::sock_addr us_addr) {
+            client.connect(tracker_addr);
+            http::request req(http::method::POST, "/share_file");
+            req.add_header("Content-Length", "0");
+            req.add_header("Authorization", auth_token);
+            req.add_header("File-Name", fname);
+            req.add_header("Group-Id", gid);
+            req.add_header("Server-Address", std::to_string(us_addr.get_uid()));
+
+            auto res = client.send_request(req);
             if(res.get_status() == http::status::UNAUTHORIZED)
                 throw invalid_cred_exception();
             else if(res.get_status() != http::status::OK)
@@ -551,12 +597,14 @@ namespace peer {
             client.disconnect();
         }
 
-        std::vector<net_socket::sock_addr> get_peers(std::string fname, std::string gid) {
+        std::vector<net_socket::sock_addr> get_peers(std::string fname, std::string gid, net_socket::sock_addr us_addr) {
             client.connect(tracker_addr);
             http::request req(http::method::GET, "/peers");
             req.add_header("Content-Length", "0");
             req.add_header("Authorization", auth_token);
             req.add_header("Group-Id", gid);
+            req.add_header("File-Name", fname);
+            req.add_header("Server-Address", std::to_string(us_addr.get_uid()));
 
             std::vector<net_socket::sock_addr> addrs;
             auto res = client.send_request(req);
@@ -583,9 +631,24 @@ namespace peer {
     };
 
     class peer {
-        tsafe_set<int, std::greater<int>> pieces;
+        tsafe_set<int, std::function<bool(int, int)>> pieces;
         std::recursive_mutex m;
         std::vector<bstring> shs;
+
+        bool seeder;
+
+        std::string fname;
+
+        std::string gid;
+
+        /* total number of pieces */
+        size_t n_pieces;
+
+        /* bitfiend of peer */
+        bitfield isAvailable;
+
+        /* priority of pieces */
+        std::vector<int> pieces_priority;
 
         /* holds data like bitfield of the neighbour */
         std::unordered_map<long long, neighbour_data> ndata;
@@ -620,11 +683,25 @@ namespace peer {
         /* Callback routines for updating neighbour data */
         void update_ndata_callback(long long peer_id, bitfield bf) {
             std::cout<<"updating ndata\n";
+            std::cout<<bf.size()<<"\n";
+            bitfield oldbf = ndata[peer_id].isAvailable;
+            std::cout<<oldbf.size()<<"\n";
+            for(int i=0; i<n_pieces; ++i) {
+                int new_priority = pieces_priority[i] + bf[i] - oldbf[i];
+                pieces.update_priority(i, new_priority);
+            }
+        }
+
+        bool comp(int p1, int p2) {
+            if(pieces_priority[p1] != pieces_priority[p2])            
+                return pieces_priority[p1] < pieces_priority[p2];
+            else
+                return p1 < p2;
         }
 
         /* function to get bitfield information */
-        bitfield get_bitfield(long long peer_id) {
-            return ndata[peer_id].isAvailable;
+        bitfield get_bitfield() {
+            return isAvailable;
         }
 
         /* routine to start the server */
@@ -636,6 +713,7 @@ namespace peer {
         static void downloader_routine(peer &p, long long peer_id) {
             std::cout<<"downloading\n";
             p.print("download thread started : "+std::to_string(peer_id)+"\n");
+            p.print(std::to_string(net_socket::sock_addr(peer_id).port));
             
             /* create a downloader */
             try {
@@ -649,13 +727,13 @@ namespace peer {
                         p.print(tid+" trying to download piece "+std::to_string(piece_id)+"\n");
                         d.download(piece_id);
                         p.print(tid+" downloaded piece " + std::to_string(piece_id) + "\n");
-                        // sleep(1);
+                        sleep(1);
                     } catch(const std::exception &e) {
                         p.print(tid +" exception occured while downloading. "+std::to_string(piece_id)+"\n");
                         std::cerr<<e.what()<<"\n";
                         p.print("retrying\n");
                         p.pieces.push(piece_id);//imp
-                        // sleep(1);
+                        sleep(1);
                     }
                 }
             } catch(std::exception e) {
@@ -676,48 +754,51 @@ namespace peer {
             }
         }
 
-        void fetch_peers() {
+        void fetch_peers(std::string fname, std::string gid) {
             /*TODO: fetch peers from tracker */
-            std::cout<<"Enter number of peers: ";
-            int n;
-            std::cin>>n;
-            for(int i=0; i<n; ++i) {
-                std::cout<<"Port: ";
-                int p;
-                std::cin>>p;
-                neighbour_data nd;
-                nd.addr = net_socket::sock_addr(net_socket::ipv4_addr("127.0.0.1"), p);
-                nd.isAvailable = bitfield(s2b("1234"));
-                ndata[nd.addr.uid] = (nd);
+            auto addrs = tc.get_peers(fname, gid, us.get_addr());
+            for(auto addr : addrs) {
+                ndata[addr.get_uid()].addr = addr;
+                ndata[addr.get_uid()].isAvailable = bitfield(n_pieces);
             }
-            // peer_addrs.push_back(net_socket::sock_addr(net_socket::ipv4_addr("127.0.0.1"), 9000));
-            // peer_addrs.push_back(net_socket::sock_addr(net_socket::ipv4_addr("127.0.0.1"), 9001));
-            // peer_addrs.push_back(net_socket::sock_addr(net_socket::ipv4_addr("127.0.0.1"), 9002));
         }
 
         void load_meta() {
             /*TODO: load shs from the torrent file */
-
+            n_pieces = 20;
+            pieces_priority.resize(n_pieces);
+            
             /*TODO: update pieces priority queue from the meta file*/
-            for(int i=0; i<20; ++i)
+            for(int i=0; i<n_pieces; ++i)
                 pieces.push(i);
+
+            isAvailable = bitfield(n_pieces);
+            if(seeder) {
+                for(int i=0; i<n_pieces; ++i)
+                    isAvailable.set(i);
+            }
         }
 
         public:
-        peer(std::string fname, std::string ip, int port) {
-            fs_ptr = new std::fstream(fname, std::ios_base::in | std::ios_base::out | std::ios_base::binary);
+        peer(std::string work_dir, std::string fname, std::string gid, std::string ip, int port, 
+            net_socket::sock_addr tracker_addr, bool seeder = false) {
+
+            this->fname = fname;
+            this->gid = gid;
+            fs_ptr = new std::fstream("../.test/"+work_dir+"/"+fname, std::ios_base::in | std::ios_base::out | std::ios_base::binary);
             m_ptr = new std::recursive_mutex();
             tsfs = tsafe_fstream(fs_ptr, m_ptr);
-            
-            /* retrieve peer addresses */
-            fetch_peers();
+            tc = tracker_client(tracker_addr);
+            pieces = tsafe_set<int, std::function<bool(int, int)>>(std::bind(&peer::peer::comp, this,
+                std::placeholders::_1, std::placeholders::_2), &pieces_priority);
+            this->seeder = seeder;
 
             /* load shs */
             load_meta();
 
-            /* start the upload server */
+            /* create upload server instance */
             us = upload_server(net_socket::ipv4_addr(ip), (uint16_t)port, tsfs, 
-                    std::bind(&peer::peer::get_bitfield, this, std::placeholders::_1));
+                    std::bind(&peer::peer::get_bitfield, this));
         }
 
         ~peer() {
@@ -730,10 +811,24 @@ namespace peer {
         void start() {
             try {
                 start_upload_server();
-                start_download();
 
-                for(int i=0; i<dwnld_threads.size(); ++i)
-                    dwnld_threads[i].join();
+                /* retrieve peer addresses or share file */
+                std::string username;
+                std::string password;
+                std::cout<<"Username: ";
+                std::cin>>username;
+                std::cout<<"Passwrod: ";
+                std::cin>>password;
+                tc.login(username, password);
+
+                if(seeder) {
+                    tc.share_file(fname, gid, us.get_addr());
+                } else {
+                    fetch_peers(fname, gid);
+                    start_download();
+                    for(int i=0; i<dwnld_threads.size(); ++i)
+                        dwnld_threads[i].join();
+                }
 
                 upload_server_thread.join();
             } catch(std::exception &e) {
