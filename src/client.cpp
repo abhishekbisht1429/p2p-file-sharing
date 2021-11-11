@@ -257,8 +257,8 @@ namespace peer {
             unsigned char md[SHA_DIGEST_LENGTH];
             SHA1(piece.c_str(), piece.size(), md);
 
-            // return shs[piece_id] == bstring(md);
-            return true; //TODO: change this
+            return shs[piece_id] == bstring(md);
+            // return true; //TODO: change this
         }
 
         void download(int piece_id) {
@@ -729,6 +729,8 @@ namespace peer {
                         d.download(piece_id);
                         p.print(tid+" downloaded piece " + std::to_string(piece_id) + "\n");
                         sleep(1);
+                    } catch(const sha_mismatch_exception sme) {
+                        p.print(tid+"sha mismatched for piece id "+std::to_string(piece_id)); 
                     } catch(const std::exception &e) {
                         p.print(tid +" Unable to connect to peer. "+std::to_string(piece_id)+"\n");
                         std::cerr<<e.what()<<"\n";
@@ -739,7 +741,7 @@ namespace peer {
                     }
                 }
             } catch(std::exception e) {
-                p.print(" exiting with failure\n");
+                p.print(" exception in downloader thread \n");
                 std::cout<<e.what()<<"\n";
             }
             p.print("download thread "+tid+" exiting");
